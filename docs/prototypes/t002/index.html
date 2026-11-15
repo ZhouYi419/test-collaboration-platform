@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T002 账号与权限原型</title>
+  <link rel="stylesheet" href="./prototype.css">
+  <script defer src="./prototype.js"></script>
+</head>
+<body>
+  <div class="preview-controls" aria-label="原型评审控制">
+    <span class="preview-label">T002 原型评审</span>
+    <label>模拟身份
+      <select id="identity">
+        <option value="operator">服务器操作人员</option>
+        <option value="admin">管理员</option>
+        <option value="member">普通用户</option>
+        <option value="legacy">T001 旧账号</option>
+        <option value="guest">未登录</option>
+      </select>
+    </label>
+    <label>模拟状态
+      <select id="scenario">
+        <option value="normal">正常</option>
+        <option value="empty">列表为空</option>
+        <option value="failure">保存失败</option>
+      </select>
+    </label>
+    <div class="preview-actions">
+      <button type="button" id="direct">直达授权页</button>
+      <button type="button" id="reset">重置示例</button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i></span>测试协作平台</div>
+      <nav id="nav" class="nav" aria-label="账号导航"></nav>
+      <div id="identity-card" class="identity-card"></div>
+    </aside>
+    <main id="main" class="main" tabindex="-1"></main>
+  </div>
+
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+</body>
+</html>

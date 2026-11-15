@@ -1,7 +1,39 @@
-export interface User {
+export type UserRole = 'admin' | 'tester' | 'developer'
+export type MemberRole = Exclude<UserRole, 'admin'>
+export type AccountStatus = 'pending' | 'active' | 'disabled'
+
+interface UserIdentity {
   id: number
   username: string
   email: string
+}
+
+interface UserProfile extends UserIdentity {
+  role: UserRole | null
+}
+
+export interface User extends UserProfile {
+  can_grant_admin: boolean
+}
+
+export interface ManagedAccount extends UserProfile {
+  status: AccountStatus
+}
+
+export interface AccountUpdate {
+  role?: MemberRole
+  status?: Exclude<AccountStatus, 'pending'>
+}
+
+interface AccountPage {
+  items: ManagedAccount[]
+  has_next: boolean
+}
+
+export const roleLabels: Record<UserRole, string> = {
+  admin: '管理员',
+  tester: '测试',
+  developer: '开发',
 }
 
 interface ErrorDetail {
@@ -30,7 +62,7 @@ function isErrorDetail(detail: unknown): detail is ErrorDetail {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/api/auth/${path}`, { ...options, credentials: 'same-origin' })
+    response = await fetch(`/api/${path}`, { ...options, credentials: 'same-origin' })
   } catch {
     throw new ApiError(0, 'network_error', '网络连接失败，请重试。')
   }
@@ -45,9 +77,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (response.status === 204 ? undefined : await response.json()) as T
 }
 
-function post<T>(path: string, data?: object): Promise<T> {
+function write<T>(method: 'POST' | 'PATCH' | 'PUT', path: string, data?: object): Promise<T> {
   return request<T>(path, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: data === undefined ? undefined : JSON.stringify(data),
   })
@@ -55,10 +87,17 @@ function post<T>(path: string, data?: object): Promise<T> {
 
 export const authApi = {
   register: (data: { username: string; email: string; password: string; confirm_password: string }) =>
-    post<User>('register', data),
-  login: (data: { identifier: string; password: string }) => post<User>('login', data),
-  me: () => request<User>('me'),
-  logout: () => post<void>('logout'),
+    write<UserIdentity>('POST', 'auth/register', data),
+  login: (data: { identifier: string; password: string }) => write<User>('POST', 'auth/login', data),
+  me: () => request<User>('auth/me'),
+  logout: () => write<void>('POST', 'auth/logout'),
+}
+
+export const adminApi = {
+  accounts: (page: number) => request<AccountPage>(`admin/accounts?page=${page}`),
+  updateAccount: (id: number, data: AccountUpdate) => write<ManagedAccount>('PATCH', `admin/accounts/${id}`, data),
+  authorizations: (page: number) => request<AccountPage>(`admin/authorizations?page=${page}`),
+  grantAdmin: (id: number) => write<ManagedAccount>('PUT', `admin/authorizations/${id}`),
 }
 
 export function errorMessage(error: unknown): string {

@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from .auth import router
+from .admin import router as admin_router
+from .auth import router as auth_router
 from .config import Settings
 
 field_names = {
@@ -15,6 +16,8 @@ field_names = {
     "email": "邮箱",
     "password": "密码",
     "confirm_password": "确认密码",
+    "role": "角色",
+    "status": "账号状态",
 }
 
 
@@ -49,13 +52,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.session_factory = sessionmaker(engine, expire_on_commit=False)
-    app.include_router(router)
+    app.include_router(auth_router)
+    app.include_router(admin_router)
 
     @app.middleware("http")
-    async def protect_auth_requests(request: Request, call_next):
-        if not request.url.path.startswith("/api/auth/"):
+    async def protect_account_requests(request: Request, call_next):
+        if not request.url.path.startswith(("/api/auth/", "/api/admin/")):
             return await call_next(request)
-        if request.method == "POST" and request.headers.get("sec-fetch-site") in {"cross-site", "same-site"}:
+        if (
+            request.method in {"POST", "PATCH", "PUT"}
+            and request.headers.get("sec-fetch-site") in {"cross-site", "same-site"}
+        ):
             return JSONResponse(
                 status_code=403, content={"detail": {"code": "untrusted_origin", "message": "请求来源无效"}},
             )

@@ -1,9 +1,9 @@
-"""Create accounts and login sessions."""
+"""创建当前数据库结构。"""
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0001"
+revision = "schema_baseline"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -17,7 +17,10 @@ def upgrade() -> None:
         sa.Column("username_key", sa.String(192), nullable=False, unique=True),
         sa.Column("email", sa.String(254), nullable=False, unique=True),
         sa.Column("password_hash", sa.String(255), nullable=False),
-        sa.Column("is_active", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column("role", sa.String(9), nullable=True),
+        sa.Column("status", sa.String(8), server_default="pending", nullable=False),
+        sa.CheckConstraint("role IN ('admin', 'tester', 'developer')", name="ck_users_role"),
+        sa.CheckConstraint("status IN ('pending', 'active', 'disabled')", name="ck_users_status"),
     )
     op.create_table(
         "login_sessions",

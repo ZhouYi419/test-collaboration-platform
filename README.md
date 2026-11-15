@@ -1,6 +1,6 @@
 # 测试协作平台
 
-面向测试人员和开发人员，围绕研发缺陷和需求的提交、处理与验证开展协作。目前提供账号注册、命令行启用、用户名或邮箱登录、查看当前账号及退出。事项流程的开发进度见[任务与验收记录](docs/TASKS.md)。
+面向测试人员和开发人员，围绕研发缺陷和需求的提交、处理与验证开展协作。目前支持账号注册、登录、退出及账号管理。管理员可为账号分配测试或开发角色，并启用或停用账号。[任务与验收记录](docs/TASKS.md)
 
 ## 本地运行
 
@@ -39,22 +39,32 @@ docker compose up --build -d
 
 仓库的 Compose 配置使用开发凭据和本地 HTTP，仅用于本机运行。Windows 本机方式已通过账号流程验收，Compose 启动待实测。
 
-## 启用注册账号
+## 初始化管理员
 
-注册后账号处于待启用状态。具备服务操作权限的人员运行启用命令后，用户即可用注册时的用户名或邮箱登录。
+先注册用于操作服务器的账号，并核对其用户名。服务操作人员在服务器上启用这个账号，获取它的账号 ID。此账号用于登录并进入「管理员授权」。
 
 使用 Windows 本机方式时，从项目根目录另开 PowerShell，设置与后端相同的 `DATABASE_URL`，再运行下列命令。将 `<用户名>` 替换为注册时填写的用户名。
 
 ```powershell
 Set-Location backend
-..\.venv\Scripts\python.exe -m app.accounts enable "<用户名>"
+..\.venv\Scripts\python.exe -m app.accounts enable "<用户名>" --role tester
 ```
 
-使用 Compose 时，在项目根目录运行下列命令。
+将命令返回的账号 ID 加入启动后端的终端环境变量 `SERVER_OPERATOR_USER_IDS`，再重启后端。
 
 ```powershell
-docker compose exec api python -m app.accounts enable "<用户名>"
+$env:SERVER_OPERATOR_USER_IDS = '<账号 ID>'
 ```
+
+使用 Compose 时，在项目根目录启用账号、配置返回的 ID，再重新创建相关容器。
+
+```powershell
+docker compose exec api python -m app.accounts enable "<用户名>" --role tester
+$env:SERVER_OPERATOR_USER_IDS = '<账号 ID>'
+docker compose up -d --force-recreate api web
+```
+
+登录该账号，打开「管理员授权」，选择已注册的账号并确认。授予时会启用目标账号，并将原角色替换为管理员。管理员从「账号管理」为普通账号分配测试或开发角色并启用。
 
 ## 配置
 
@@ -64,6 +74,7 @@ docker compose exec api python -m app.accounts enable "<用户名>"
 | --- | --- |
 | `DATABASE_URL` | 后端、迁移与账号启用命令使用的数据库连接串。本机运行时设置为开发库地址，Compose 已配置容器内部地址。 |
 | `API_PROXY_TARGET` | Vite 开发代理的后端地址，默认 `http://127.0.0.1:8000`。后端端口变化时一并更新。 |
+| `SERVER_OPERATOR_USER_IDS` | 可进入管理员授权页的账号 ID，由具备服务器操作权限的人员配置。多个 ID 用逗号分隔，默认留空。更换或重建数据库后须重新核对 ID。 |
 | `SECURE_COOKIE` | 设置为 `1` 或 `true` 时为会话 Cookie 添加 `Secure` 属性。本文的本地 HTTP 启动方式使用默认值。 |
 | `TEST_DATABASE_URL` | 可选的 PostgreSQL 测试库连接串。使用独立测试库，账号需有创建 schema 的权限，测试会创建并清理各自的 schema。 |
 

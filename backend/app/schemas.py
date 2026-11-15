@@ -1,6 +1,10 @@
+from typing import Literal, Self
+
 from email_validator import EmailNotValidError, validate_email
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic_core import PydanticCustomError
+
+from .models import AccountStatus, UserRole
 
 
 def normalize_email(value: str) -> str:
@@ -65,12 +69,42 @@ class Credentials(BaseModel):
         return identifier
 
 
-class CurrentUser(BaseModel):
+class UserIdentity(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str
     email: str
+
+
+class UserProfile(UserIdentity):
+    role: UserRole | None
+
+
+class CurrentUser(UserProfile):
+    can_grant_admin: bool
+
+
+class ManagedAccount(UserProfile):
+    status: AccountStatus
+
+
+class AccountPage(BaseModel):
+    items: list[ManagedAccount]
+    has_next: bool
+
+
+class AccountUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["tester", "developer"] | None = None
+    status: Literal["active", "disabled"] | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> Self:
+        if self.role is None and self.status is None:
+            raise ValueError("请选择要修改的内容")
+        return self
 
 
 class AuthErrorDetail(BaseModel):

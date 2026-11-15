@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ElButton } from 'element-plus'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ApiError, authApi, errorMessage, type User } from './api'
+import AccountWorkspace from './AccountWorkspace.vue'
+import { ApiError, authApi, errorMessage, roleLabels, type User } from './api'
 
 const user = ref<User | null>(null)
 const message = ref('')
@@ -43,23 +43,26 @@ onMounted(loadAccount)
 </script>
 
 <template>
-  <section class="card" aria-labelledby="account-title">
-    <div class="heading">
-      <h1 id="account-title">我的账号</h1>
-    </div>
-    <p v-if="message" class="error-box" role="alert">{{ message }}</p>
-    <template v-if="user">
-      <dl class="account-details">
-        <dt>用户名</dt>
-        <dd>{{ user.username }}</dd>
-        <dt>邮箱</dt>
-        <dd>{{ user.email }}</dd>
-      </dl>
-      <ElButton class="primary-button" :disabled="busy" @click="logout">
-        {{ busy ? '退出中…' : '退出登录' }}
-      </ElButton>
-    </template>
-    <ElButton v-else-if="message" class="primary-button" @click="loadAccount">重试</ElButton>
-    <p v-else class="muted" role="status">正在检查登录状态…</p>
-  </section>
+  <AccountWorkspace :user="user">
+    <section class="account-profile" aria-labelledby="account-title">
+      <header class="admin-page-head">
+        <h1 id="account-title" tabindex="-1">我的账号</h1>
+      </header>
+      <div v-if="message" class="admin-feedback">
+        <p role="alert">{{ message }}</p>
+        <button v-if="!user" class="admin-button" type="button" @click="loadAccount">重试</button>
+      </div>
+      <template v-if="user">
+        <dl class="account-details">
+          <div><dt>用户名</dt><dd>{{ user.username }}</dd></div>
+          <div><dt>邮箱</dt><dd>{{ user.email }}</dd></div>
+          <div><dt>角色</dt><dd>{{ user.role ? roleLabels[user.role] : '未分配' }}</dd></div>
+        </dl>
+        <button class="admin-button" type="button" :disabled="busy" @click="logout">
+          {{ busy ? '退出中…' : '退出登录' }}
+        </button>
+      </template>
+      <p v-else-if="busy" class="admin-feedback" role="status">正在检查登录状态…</p>
+    </section>
+  </AccountWorkspace>
 </template>

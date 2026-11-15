@@ -16,6 +16,7 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://collaboration:collaboration@db:5432/collaboration
+      SERVER_OPERATOR_USER_IDS: "${SERVER_OPERATOR_USER_IDS:-}"
     depends_on:
       db:
         condition: service_healthy

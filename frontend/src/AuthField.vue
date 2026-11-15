@@ -1,45 +1,38 @@
 <script setup lang="ts">
-import { ElInput } from 'element-plus'
 import { ref } from 'vue'
 
 const props = defineProps<{
   name: string
   label: string
-  placeholder: string
+  hint?: string
   autocomplete: string
   type?: 'email' | 'password'
   error?: string
+  busy?: boolean
 }>()
 const model = defineModel<string>({ required: true })
 const showPassword = ref(false)
 </script>
 
 <template>
-  <div class="field" :class="{ 'has-error': error }">
-    <label :for="name">{{ label }}</label>
-    <ElInput
-      :id="name"
-      v-model="model"
-      :name="name"
-      :type="showPassword ? 'text' : (props.type ?? 'text')"
-      :placeholder="placeholder"
-      :autocomplete="autocomplete"
-      :spellcheck="false"
-      autocapitalize="none"
-      :aria-invalid="Boolean(error)"
-      :aria-describedby="error ? `${name}-error` : undefined"
-      required
-    >
-      <template v-if="type === 'password'" #suffix>
-        <button
-          class="reveal"
-          type="button"
-          :aria-controls="name"
-          :aria-label="`${showPassword ? '隐藏' : '显示'}${label}`"
-          @click="showPassword = !showPassword"
-        >{{ showPassword ? '隐藏' : '显示' }}</button>
-      </template>
-    </ElInput>
-    <p v-if="error" :id="`${name}-error`" class="field-error" aria-live="polite">{{ error }}</p>
+  <div class="auth-field" :class="{ 'has-error': error }">
+    <div class="field-caption">
+      <label :for="name">{{ label }}</label>
+      <span v-if="hint && !error" :id="`${name}-hint`" class="field-hint">{{ hint }}</span>
+    </div>
+    <div class="input-shell">
+      <input
+        :id="name" v-model="model" :name="name" :type="showPassword ? 'text' : (props.type ?? 'text')"
+        :autocomplete="autocomplete" :spellcheck="false" autocapitalize="none" :readonly="busy"
+        :aria-invalid="error ? true : undefined"
+        :aria-describedby="error ? `${name}-error` : hint ? `${name}-hint` : undefined" required
+      >
+      <button
+        v-if="type === 'password'" class="reveal" type="button" :disabled="busy"
+        :aria-controls="name" :aria-label="`${showPassword ? '隐藏' : '显示'}${label}`"
+        @click="showPassword = !showPassword"
+      >{{ showPassword ? '隐藏' : '显示' }}</button>
+    </div>
+    <p :id="`${name}-error`" class="field-feedback" aria-live="polite">{{ error }}</p>
   </div>
 </template>

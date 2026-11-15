@@ -1,5 +1,6 @@
 import asyncio
 import os
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from app.accounts import main as enable_account
 from app.auth import cookie_name
 from app.main import create_app
-from app.models import LoginSession, User
+from app.models import AccountStatus, LoginSession, User
 
 registration_data = {
     "username": "T001-测试",
@@ -97,7 +98,8 @@ async def test_registration_persists_inactive_user_and_enforces_uniqueness(clien
     assert cookie_name not in client.cookies
     with app.state.session_factory() as db:
         user = db.scalar(select(User))
-        assert user.is_active is False
+        assert user.status == AccountStatus.PENDING
+        assert user.role is None
         assert user.password_hash.startswith("$argon2id$")
 
     duplicate_name = await register(client, username="t001-测试", email="other@example.test")
@@ -127,7 +129,12 @@ async def test_activation_login_refresh_and_logout(client, monkeypatch):
     assert inactive.json()["detail"]["message"] == "账号尚未启用，请联系管理员"
 
     monkeypatch.setattr("sys.argv", ["accounts", "enable", "t001-测试"])
+    with pytest.raises(SystemExit) as missing_role:
+        enable_account()
+    assert missing_role.value.code == 1
+    monkeypatch.setattr("sys.argv", ["accounts", "enable", "t001-测试", "--role", "tester"])
     enable_account()
+    monkeypatch.setattr("sys.argv", ["accounts", "enable", "t001-测试"])
     enable_account()
     response = await login(client, "  t001-测试 ")
     assert response.status_code == 200
@@ -151,7 +158,7 @@ async def test_activation_login_refresh_and_logout(client, monkeypatch):
 
 async def test_expired_session_and_cross_site_mutation(client, app, monkeypatch):
     await register(client)
-    monkeypatch.setattr("sys.argv", ["accounts", "enable", registration_data["username"]])
+    monkeypatch.setattr("sys.argv", ["accounts", "enable", registration_data["username"], "--role", "developer"])
     enable_account()
     assert (await login(client, registration_data["username"])).status_code == 200
     blocked = await client.post("/api/auth/logout", headers={"Sec-Fetch-Site": "cross-site"})
@@ -161,3 +168,101 @@ async def test_expired_session_and_cross_site_mutation(client, app, monkeypatch)
         db.execute(update(LoginSession).values(expires_at=0))
         db.commit()
     assert (await client.get("/api/auth/me")).status_code == 401
+
+
+async def sign_in_operator(client, app, monkeypatch):
+    operator = await register(client, username="ops", email="ops@example.test")
+    operator_id = operator.json()["id"]
+    app.state.settings = replace(app.state.settings, server_operator_user_ids=frozenset({operator_id}))
+    monkeypatch.setattr("sys.argv", ["accounts", "enable", "OPS", "--role", "tester"])
+    enable_account()
+    profile = (await login(client, "ops")).json()
+    assert profile["role"] == "tester"
+    assert profile["can_grant_admin"] is True
+    return operator_id
+
+
+async def test_admin_manages_roles_and_revokes_disabled_account_sessions(client, app, monkeypatch):
+    await sign_in_operator(client, app, monkeypatch)
+    admin = await register(client, username="admin", email="admin@example.test")
+    assert admin.status_code == 201
+    admin_id = admin.json()["id"]
+    assert (await client.put(f"/api/admin/authorizations/{admin_id}")).status_code == 200
+    assert (await login(client, "admin")).json()["role"] == "admin"
+    account = await register(client, role="admin")
+    assert account.status_code == 201
+    account_id = account.json()["id"]
+    path = f"/api/admin/accounts/{account_id}"
+
+    listed = await client.get("/api/admin/accounts")
+    assert listed.status_code == 200
+    assert listed.json()["items"][0] == {
+        **account.json(), "role": None, "status": "pending",
+    }
+    assert (await client.patch(path, json={"status": "active"})).status_code == 409
+    assert (await client.patch(path, json={"role": "admin"})).status_code == 422
+    assert (await client.patch(path, json={"role": ["tester", "developer"]})).status_code == 422
+    assert (await client.patch(f"/api/admin/accounts/{admin_id}", json={"status": "disabled"})).status_code == 403
+    blocked = await client.patch(path, json={"role": "tester"}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert blocked.status_code == 403
+    activated = await client.patch(path, json={"role": "tester", "status": "active"})
+    assert activated.status_code == 200
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as member:
+        assert (await member.get("/api/admin/accounts")).status_code == 401
+        assert (await login(member, registration_data["username"])).json()["role"] == "tester"
+        assert (await member.get("/api/admin/accounts")).status_code == 403
+        assert (await member.patch(path, json={"status": "disabled"})).status_code == 403
+        assert (await client.patch(path, json={"role": "developer"})).status_code == 200
+        assert (await member.get("/api/auth/me")).json()["role"] == "developer"
+
+        disabled = await client.patch(path, json={"status": "disabled"})
+        assert disabled.json()["status"] == "disabled"
+        assert (await member.get("/api/auth/me")).status_code == 401
+        login_disabled = await login(member, registration_data["username"])
+        assert login_disabled.status_code == 403
+        assert login_disabled.json()["detail"]["code"] == "account_disabled"
+
+        assert (await client.patch(path, json={"status": "active"})).status_code == 200
+        assert (await member.get("/api/auth/me")).status_code == 401
+        assert (await login(member, registration_data["username"])).json()["role"] == "developer"
+
+
+async def test_only_configured_server_operator_can_call_grant_api(client, app, monkeypatch):
+    prefix = "/api/admin/authorizations"
+    await register(client, username="admin", email="admin@example.test")
+    await register(client, username="member", email="member@example.test")
+    target = await register(client)
+    target_id = target.json()["id"]
+    path = f"{prefix}/{target_id}"
+    assert (await client.get(prefix)).status_code == 401
+    assert (await client.put(path)).status_code == 401
+
+    operator_id = await sign_in_operator(client, app, monkeypatch)
+    assert (await client.get("/api/admin/accounts")).status_code == 403
+    listed = (await client.get(prefix)).json()["items"]
+    admin_id = next(account["id"] for account in listed if account["username"] == "admin")
+    assert all("can_grant_admin" not in account for account in listed)
+    assert (await client.put(f"{prefix}/{admin_id}")).status_code == 200
+    monkeypatch.setattr("sys.argv", ["accounts", "enable", "member", "--role", "developer"])
+    enable_account()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as caller:
+        for username in ("admin", "member"):
+            assert (await login(caller, username)).json()["can_grant_admin"] is False
+            assert (await caller.get(prefix)).status_code == 403
+            denied = await caller.put(path, headers={"X-User-Id": str(operator_id), "X-Server-Operator": "true"})
+            assert denied.status_code == 403
+            assert denied.json()["detail"]["code"] == "server_operator_required"
+
+    blocked = await client.put(path, headers={"Sec-Fetch-Site": "cross-site"})
+    assert blocked.status_code == 403
+    before = next(account for account in (await client.get(prefix)).json()["items"] if account["id"] == target_id)
+    assert before["role"] is None and before["status"] == "pending"
+    for _ in range(2):
+        granted = await client.put(path)
+        assert granted.status_code == 200
+        assert granted.json() == {**target.json(), "role": "admin", "status": "active"}
+    assert (await client.put(f"{prefix}/999999")).status_code == 404
