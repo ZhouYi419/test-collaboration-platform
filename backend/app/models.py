@@ -1,6 +1,7 @@
 from enum import StrEnum
+from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String
+from sqlalchemy import JSON, BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, String, Text, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -42,3 +43,41 @@ class LoginSession(Base):
     token_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     expires_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class IssueStatus(StrEnum):
+    DRAFT = "draft"
+    PENDING_CLAIM = "pending_claim"
+
+
+class Issue(Base):
+    __tablename__ = "issues"
+    __table_args__ = (
+        CheckConstraint("status IN ('draft', 'pending_claim')", name="ck_issues_status"),
+        Index("ix_issues_creator_updated", "creator_id", "updated_at", "id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[str] = mapped_column(String(13))
+    version: Mapped[int] = mapped_column()
+    last_write_id: Mapped[UUID] = mapped_column(Uuid)
+    updated_at: Mapped[int] = mapped_column(BigInteger)
+    type: Mapped[str | None] = mapped_column(String(7))
+    title: Mapped[str | None] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[str | None] = mapped_column(String(2))
+    details: Mapped[dict[str, str]] = mapped_column(JSON)
+
+    __mapper_args__ = {"version_id_col": version}
+
+
+class IssueAttachment(Base):
+    __tablename__ = "issue_attachments"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issue_id: Mapped[UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    size: Mapped[int]
+    content: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)

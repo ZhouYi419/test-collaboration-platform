@@ -29,8 +29,36 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.BigInteger(), nullable=False),
     )
     op.create_index("ix_login_sessions_user_id", "login_sessions", ["user_id"])
+    op.create_table(
+        "issues",
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("creator_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("status", sa.String(13), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("last_write_id", sa.Uuid(), nullable=False),
+        sa.Column("updated_at", sa.BigInteger(), nullable=False),
+        sa.Column("type", sa.String(7), nullable=True),
+        sa.Column("title", sa.String(100), nullable=True),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("priority", sa.String(2), nullable=True),
+        sa.Column("details", sa.JSON(), nullable=False),
+        sa.CheckConstraint("status IN ('draft', 'pending_claim')", name="ck_issues_status"),
+    )
+    op.create_index("ix_issues_creator_updated", "issues", ["creator_id", "updated_at", "id"])
+    op.create_table(
+        "issue_attachments",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("issue_id", sa.Uuid(), sa.ForeignKey("issues.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("name", sa.String(255), nullable=False),
+        sa.Column("size", sa.Integer(), nullable=False),
+        sa.Column("content", sa.LargeBinary(), nullable=False),
+        sqlite_autoincrement=True,
+    )
+    op.create_index("ix_issue_attachments_issue_id", "issue_attachments", ["issue_id"])
 
 
 def downgrade() -> None:
+    op.drop_table("issue_attachments")
+    op.drop_table("issues")
     op.drop_table("login_sessions")
     op.drop_table("users")

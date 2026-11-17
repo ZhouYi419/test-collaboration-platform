@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的事项 · 测试协作平台</title>
+  <link rel="stylesheet" href="../../../frontend/src/styles.css">
+  <link rel="stylesheet" href="../../../frontend/src/admin.css">
+  <link rel="stylesheet" href="prototype.css">
+  <script src="prototype.js" defer></script>
+</head>
+<body>
+  <div class="account-workspace">
+    <aside class="account-sidebar">
+      <div class="workspace-brand wordmark">
+        <span class="brand-mark" aria-hidden="true"></span>测试协作平台
+      </div>
+      <nav class="admin-nav" aria-label="工作台导航">
+        <a class="nav-link" href="#items" id="items-link"><span class="nav-icon list-icon" aria-hidden="true"></span>我的事项</a>
+        <a class="nav-link" href="#account" id="account-link"><span class="nav-icon person-icon" aria-hidden="true"></span>我的账号</a>
+      </nav>
+      <div class="workspace-identity" id="identity">
+        <span class="avatar" aria-hidden="true">林</span>
+        <div><p class="identity-name">林溪</p><p class="identity-role" id="identity-role">测试</p></div>
+      </div>
+    </aside>
+    <main class="admin-layout"><div class="workspace-content" id="view"></div></main>
+  </div>
+  <div class="issue-notice" id="notice" role="status"></div>
+  <dialog class="account-editor" id="confirm" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <div class="editor-body">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-message"></p>
+      </div>
+      <div class="editor-actions">
+        <button class="admin-button" value="cancel" autofocus>取消</button>
+        <button class="admin-primary danger-button" id="confirm-action" value="confirm"></button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

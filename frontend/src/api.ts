@@ -59,7 +59,7 @@ function isErrorDetail(detail: unknown): detail is ErrorDetail {
     && 'message' in detail && typeof detail.message === 'string'
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function requestResponse(path: string, options: RequestInit = {}): Promise<Response> {
   let response: Response
   try {
     response = await fetch(`/api/${path}`, { ...options, credentials: 'same-origin' })
@@ -74,6 +74,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(response.status, 'request_failed', '服务暂时不可用，请重试。')
   }
+  return response
+}
+
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await requestResponse(path, options)
   return (response.status === 204 ? undefined : await response.json()) as T
 }
 

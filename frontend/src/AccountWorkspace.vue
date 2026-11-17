@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
 import { roleLabels, type User } from './api'
 
 defineProps<{ user: User | null }>()
+const route = useRoute()
 </script>
 
 <template>
@@ -11,6 +13,10 @@ defineProps<{ user: User | null }>()
         <span class="brand-mark" aria-hidden="true"></span>测试协作平台
       </div>
       <nav v-if="user" class="admin-nav" aria-label="账号导航">
+        <RouterLink v-if="user.role === 'tester'" class="nav-link" to="/issues"
+          :aria-current="route.name === 'issues' ? 'page' : undefined">
+          <span class="nav-icon list-icon" aria-hidden="true"></span>我的事项
+        </RouterLink>
         <RouterLink class="nav-link" to="/account"><span class="nav-icon person-icon" aria-hidden="true"></span>我的账号</RouterLink>
         <RouterLink v-if="user.role === 'admin'" class="nav-link" to="/admin/accounts">
           <span class="nav-icon list-icon" aria-hidden="true"></span>账号管理

@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from .admin import router as admin_router
 from .auth import router as auth_router
 from .config import Settings
+from .issues import router as issues_router
 
 field_names = {
     "identifier": "用户名或邮箱",
@@ -54,13 +55,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = sessionmaker(engine, expire_on_commit=False)
     app.include_router(auth_router)
     app.include_router(admin_router)
+    app.include_router(issues_router)
 
     @app.middleware("http")
-    async def protect_account_requests(request: Request, call_next):
-        if not request.url.path.startswith(("/api/auth/", "/api/admin/")):
+    async def protect_private_requests(request: Request, call_next):
+        if not (
+            request.url.path == "/api/issues"
+            or request.url.path.startswith(("/api/auth/", "/api/admin/", "/api/issues/"))
+        ):
             return await call_next(request)
         if (
-            request.method in {"POST", "PATCH", "PUT"}
+            request.method in {"POST", "PATCH", "PUT", "DELETE"}
             and request.headers.get("sec-fetch-site") in {"cross-site", "same-site"}
         ):
             return JSONResponse(
