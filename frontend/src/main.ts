@@ -15,6 +15,7 @@ const router = createRouter({
     { path: '/register', name: 'register', component: AuthPage, props: { registering: true } },
     { path: '/account', name: 'account', component: AccountPage, meta: { workspace: true } },
     { path: '/issues/:issueId?', name: 'issues', component: IssuePage, meta: { workspace: true } },
+    { path: '/development/:issueId?', name: 'development', component: IssuePage, meta: { workspace: true } },
     { path: '/admin/accounts', name: 'admin-accounts', component: AdminAccountsPage, meta: { workspace: true } },
     {
       path: '/admin/authorizations', name: 'admin-authorizations', component: AdminAccountsPage,

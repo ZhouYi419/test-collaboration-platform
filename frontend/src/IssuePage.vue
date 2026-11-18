@@ -3,10 +3,11 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import AccountWorkspace from './AccountWorkspace.vue'
 import IssueEditor from './IssueEditor.vue'
+import IssueWorkflow from './IssueWorkflow.vue'
 import { ApiError, authApi, errorMessage, type User } from './api'
 import {
   fieldsByType, fileSize, issueDate, issuesApi, statusLabels, typeLabels,
-  type Attachment, type IssueDetail, type IssueSummary,
+  queues, type DeveloperQueue, type Attachment, type IssueDetail, type IssueSummary, type WorkflowAction,
 } from './issuesApi'
 
 const router = useRouter()
@@ -18,9 +19,29 @@ const busy = ref(true)
 const failure = ref<{ message: string; status: number }>()
 const downloadError = ref('')
 const editor = ref<InstanceType<typeof IssueEditor>>()
+const workflow = ref<InstanceType<typeof IssueWorkflow>>()
 const view = ref<HTMLElement>()
 const changedId = ref('')
 const notice = ref('')
+const workflowNotice = ref('')
+const feedbackReceipt = ref(false)
+const developerPage = computed(() => route.name === 'development')
+const pageTitle = computed(() => developerPage.value ? '开发事项' : '我的事项')
+const queue = computed<DeveloperQueue>(() => {
+  const value = String(route.query.queue ?? 'inbox')
+  return Object.hasOwn(queues, value) ? value as DeveloperQueue : 'inbox'
+})
+const listPath = computed(() => developerPage.value ? `/development?queue=${queue.value}` : '/issues')
+const detailBack = computed(() => {
+  if (!developerPage.value || !detail.value) return listPath.value
+  const state = detail.value.status
+  const destination = state === 'pending_claim' ? 'inbox' : state === 'pending_verify' ? 'feedback' : 'assigned'
+  return `/development?queue=${destination}`
+})
+const canProcess = computed(() => developerPage.value && detail.value && (
+  detail.value.status === 'pending_claim' || detail.value.assignee?.id === user.value?.id
+) && ['pending_claim', 'pending_work', 'in_progress'].includes(detail.value.status))
+const editing = computed(() => !developerPage.value && (itemId.value === 'new' || detail.value?.status === 'draft'))
 const itemId = computed(() => String(route.params.issueId ?? ''))
 const specifics = computed(() => detail.value?.type
   ? fieldsByType[detail.value.type].filter(field => detail.value?.form[field.key])
@@ -28,6 +49,7 @@ const specifics = computed(() => detail.value?.type
 let listPosition: { path: string; scroll: number } | undefined
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 let loadVersion = 0
+let focusQueue = false
 
 async function load() {
   const version = ++loadVersion
@@ -35,6 +57,7 @@ async function load() {
   busy.value = true
   failure.value = undefined
   detail.value = null
+  feedbackReceipt.value = false
   downloadError.value = ''
   if (target) {
     notice.value = ''
@@ -44,12 +67,12 @@ async function load() {
     const profile = await authApi.me()
     if (version !== loadVersion) return
     user.value = profile
-    if (profile.role !== 'tester') {
-      failure.value = { message: '我的事项仅向测试人员开放。', status: 403 }
+    if (profile.role !== (developerPage.value ? 'developer' : 'tester')) {
+      failure.value = { message: developerPage.value ? '开发事项仅向开发人员开放。' : '我的事项仅向测试人员开放。', status: 403 }
     } else if (!target) {
-      const result = await issuesApi.list()
+      const result = developerPage.value ? await issuesApi.development(queue.value) : await issuesApi.list()
       if (version === loadVersion) items.value = result
-    } else if (target !== 'new') {
+    } else if (target !== 'new' || developerPage.value) {
       const result = await issuesApi.get(target)
       if (version === loadVersion) detail.value = result
     }
@@ -77,7 +100,8 @@ async function load() {
     }
   }
   window.scrollTo(0, 0)
-  view.value?.querySelector<HTMLElement>('h1')?.focus({ preventScroll: true })
+  view.value?.querySelector<HTMLElement>(focusQueue ? '.queue-tab[aria-current="page"]' : 'h1')?.focus({ preventScroll: true })
+  focusQueue = false
 }
 
 function login() {
@@ -93,6 +117,49 @@ function showSaved(id: string, message: string) {
   void router.push('/issues')
 }
 
+function itemPath(id: string) {
+  return developerPage.value ? `/development/${id}?queue=${queue.value}` : `/issues/${id}`
+}
+
+async function updated(issue: IssueDetail, action: WorkflowAction) {
+  const scroll = window.scrollY
+  detail.value = issue
+  notice.value = ''
+  clearTimeout(noticeTimer)
+  if (action === 'claim') {
+    notice.value = '事项已领取'
+    clearTimeout(noticeTimer)
+    noticeTimer = setTimeout(() => { notice.value = '' }, 3300)
+  }
+  await nextTick()
+  if (action === 'start') {
+    window.scrollTo(0, scroll)
+    workflow.value?.focusInput()
+  } else if (action === 'finish') {
+    feedbackReceipt.value = true
+    await nextTick()
+    const section = view.value?.querySelector<HTMLElement>('.feedback-result')
+    section?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true })
+    section?.scrollIntoView({ block: 'end' })
+  }
+}
+
+async function unavailable(message: string) {
+  workflowNotice.value = message
+  listPosition = undefined
+  await router.replace('/development?queue=inbox')
+}
+
+function keepAttachmentVisible(event: FocusEvent) {
+  const target = event.target as HTMLElement
+  if (!target.matches('.file-download') || !view.value?.querySelector('.workflow-actions')) return
+  const actionBar = view.value.querySelector('.workflow-actions')
+  const row = target.closest('li')
+  if (!actionBar || !row) return
+  const overlap = row.getBoundingClientRect().bottom + 8 - actionBar.getBoundingClientRect().top
+  if (overlap > 0) window.scrollBy(0, overlap)
+}
+
 async function download(file: Attachment) {
   if (!detail.value) return
   downloadError.value = ''
@@ -106,64 +173,77 @@ async function download(file: Attachment) {
 
 onBeforeRouteUpdate(async (to, from) => {
   if (editor.value && !await editor.value.confirmLeave()) return false
-  if (!from.params.issueId && to.params.issueId) listPosition = { path: to.path, scroll: window.scrollY }
+  if (workflow.value && !await workflow.value.confirmLeave()) return false
+  if (!from.params.issueId && to.params.issueId) listPosition = { path: to.fullPath, scroll: window.scrollY }
+  focusQueue = developerPage.value && !from.params.issueId && !to.params.issueId && to.query.queue !== from.query.queue
+  if (!to.params.issueId && to.query.queue !== from.query.queue) listPosition = undefined
+  if (to.params.issueId) workflowNotice.value = ''
   return true
 })
-onBeforeRouteLeave(() => editor.value?.confirmLeave())
+onBeforeRouteLeave(async () => {
+  if (editor.value && !await editor.value.confirmLeave()) return false
+  return workflow.value?.confirmLeave()
+})
 onUnmounted(() => {
   loadVersion++
   clearTimeout(noticeTimer)
 })
-watch(itemId, load, { immediate: true })
+watch(() => route.fullPath, load, { immediate: true })
 </script>
 
 <template>
   <AccountWorkspace :user="user" class="issue-workspace">
-    <div ref="view" :class="{ 'issue-reading': itemId && !failure }">
+    <div ref="view" :class="{ 'issue-reading': editing && !failure, 'issue-detail': detail && !editing && !failure }"
+      @focusin="keepAttachmentVisible">
       <template v-if="failure">
         <div class="issue-head">
-          <h1 tabindex="-1">{{ failure.status === 403 ? '无权访问' : failure.status === 404 ? '事项不可用' : '我的事项' }}</h1>
+          <h1 tabindex="-1">{{ failure.status === 403 ? '无权访问' : failure.status === 404 ? '事项不可用' : pageTitle }}</h1>
         </div>
         <div class="issue-empty">
           <p role="alert">{{ failure.message }}</p>
           <RouterLink v-if="failure.status === 403" class="admin-button create-button" to="/account">返回我的账号</RouterLink>
-          <RouterLink v-else-if="failure.status === 404" class="admin-button create-button" to="/issues">返回我的事项</RouterLink>
+          <RouterLink v-else-if="failure.status === 404" class="admin-button create-button" :to="listPath">返回列表</RouterLink>
           <button v-else type="button" class="admin-button" @click="load">重新加载</button>
         </div>
       </template>
 
       <template v-else-if="busy">
-        <div class="issue-head"><h1 tabindex="-1">我的事项</h1></div>
+        <div class="issue-head"><h1 tabindex="-1">{{ pageTitle }}</h1></div>
         <p class="issue-empty" role="status">正在加载事项…</p>
       </template>
 
       <template v-else-if="!itemId">
-        <div class="issue-head">
-          <h1 tabindex="-1">我的事项</h1>
-          <RouterLink class="admin-primary create-button" to="/issues/new"><span aria-hidden="true">+</span>新建事项</RouterLink>
+        <div class="issue-head" :class="{ 'is-queue': developerPage }">
+          <h1 tabindex="-1">{{ pageTitle }}</h1>
+          <RouterLink v-if="!developerPage" class="admin-primary create-button" to="/issues/new"><span aria-hidden="true">+</span>新建事项</RouterLink>
         </div>
-        <table v-if="items.length" class="issue-table" aria-label="我的事项">
+        <nav v-if="developerPage" class="queue-tabs" aria-label="开发事项分类">
+          <RouterLink v-for="(label, key) in queues" :key="key" class="queue-tab" :to="`/development?queue=${key}`"
+            :aria-current="queue === key ? 'page' : undefined">{{ label }}</RouterLink>
+        </nav>
+        <p v-if="workflowNotice" class="action-error workflow-notice" role="alert">{{ workflowNotice }}</p>
+        <table v-if="items.length" class="issue-table" :aria-label="developerPage ? queues[queue] : pageTitle">
           <colgroup><col><col><col><col><col></colgroup>
           <thead><tr><th scope="col">标题</th><th scope="col">类型</th><th scope="col">优先级</th><th scope="col">状态</th><th scope="col">更新时间</th></tr></thead>
           <tbody>
             <tr v-for="item in items" :key="item.id" :class="{ 'recently-changed': changedId === item.id }">
-              <th scope="row"><RouterLink class="issue-title" :to="`/issues/${item.id}`">{{ item.title || '未命名草稿' }}</RouterLink></th>
+              <th scope="row"><RouterLink class="issue-title" :to="itemPath(item.id)">{{ item.title || '未命名草稿' }}</RouterLink></th>
               <td class="issue-type">{{ item.type ? typeLabels[item.type] : '未选择' }}</td>
               <td>
                 <span v-if="item.priority" class="issue-priority" :class="{ 'is-urgent': item.priority === 'P0' }">{{ item.priority }}</span>
                 <span v-else class="unset-priority" aria-label="未选择优先级">—</span>
               </td>
-              <td><span class="issue-state" :class="{ 'is-draft': item.status === 'draft' }">{{ statusLabels[item.status] }}</span></td>
+              <td><span class="issue-state" :data-status="item.status" :class="{ 'is-draft': item.status === 'draft' }">{{ statusLabels[item.status] }}</span></td>
               <td class="issue-time"><time :datetime="new Date(item.updated_at).toISOString()">{{ issueDate(item.updated_at) }}</time></td>
             </tr>
           </tbody>
         </table>
-        <div v-else class="issue-empty"><h2>暂无事项</h2></div>
+        <div v-else class="issue-empty"><h2>{{ developerPage ? { inbox: '暂无待领取事项', assigned: '暂无待办', feedback: '暂无已反馈事项' }[queue] : '暂无事项' }}</h2></div>
       </template>
 
       <template v-else>
-        <RouterLink class="back-link" to="/issues"><span aria-hidden="true">←</span> 我的事项</RouterLink>
-        <template v-if="itemId === 'new' || detail?.status === 'draft'">
+        <RouterLink class="back-link" :to="detailBack"><span aria-hidden="true">←</span> {{ developerPage ? '开发事项' : '我的事项' }}</RouterLink>
+        <template v-if="editing">
           <div class="issue-head form-head">
             <h1 tabindex="-1">{{ detail ? '编辑草稿' : '新建事项' }}</h1>
             <p class="reporter">申请人<strong>{{ user?.username }}</strong></p>
@@ -172,14 +252,17 @@ watch(itemId, load, { immediate: true })
         </template>
         <template v-else-if="detail">
           <div class="detail-head">
-            <span class="issue-state">{{ statusLabels[detail.status] }}</span>
+            <div class="workflow-heading">
+              <span class="issue-state" :data-status="detail.status">{{ statusLabels[detail.status] }}</span>
+              <span class="workflow-updated">更新于 <time :datetime="new Date(detail.updated_at).toISOString()">{{ issueDate(detail.updated_at) }}</time></span>
+            </div>
             <h1 tabindex="-1">{{ detail.title }}</h1>
           </div>
-          <dl class="detail-summary">
+          <dl class="detail-summary workflow-summary">
+            <div><dt>申请人</dt><dd>{{ detail.creator.username }}</dd></div>
+            <div><dt>负责人</dt><dd>{{ detail.assignee?.username ?? '未指定' }}</dd></div>
             <div><dt>申请类型</dt><dd>{{ detail.type && typeLabels[detail.type] }}</dd></div>
-            <div><dt>申请人</dt><dd>{{ user?.username }}</dd></div>
             <div><dt>优先级</dt><dd class="issue-priority" :class="{ 'is-urgent': detail.priority === 'P0' }">{{ detail.priority }}</dd></div>
-            <div><dt>更新时间</dt><dd>{{ issueDate(detail.updated_at) }}</dd></div>
           </dl>
           <section class="detail-section">
             <h2>详细描述</h2><p class="detail-text">{{ detail.form.description }}</p>
@@ -204,6 +287,16 @@ watch(itemId, load, { immediate: true })
             </ul>
             <p v-else class="file-hint">无附件</p>
             <p v-if="downloadError" class="field-error file-error" role="alert">{{ downloadError }}</p>
+          </section>
+          <IssueWorkflow v-if="canProcess" ref="workflow" :issue="detail" @updated="updated"
+            @unavailable="unavailable" @expired="login" />
+          <section v-else-if="detail.feedback" class="detail-section workflow-feedback feedback-result">
+            <div class="feedback-heading">
+              <h2 tabindex="-1" :aria-describedby="feedbackReceipt ? 'feedback-receipt' : undefined">处理反馈</h2>
+              <p v-if="feedbackReceipt" id="feedback-receipt" class="feedback-receipt">处理结果已提交</p>
+            </div>
+            <p class="detail-text">{{ detail.feedback }}</p>
+            <p class="feedback-time">{{ detail.assignee?.username }} · {{ detail.feedback_at && issueDate(detail.feedback_at) }}</p>
           </section>
         </template>
       </template>

@@ -17,6 +17,10 @@ const route = useRoute()
           :aria-current="route.name === 'issues' ? 'page' : undefined">
           <span class="nav-icon list-icon" aria-hidden="true"></span>我的事项
         </RouterLink>
+        <RouterLink v-if="user.role === 'developer'" class="nav-link" to="/development"
+          :aria-current="route.name === 'development' ? 'page' : undefined">
+          <span class="nav-icon list-icon" aria-hidden="true"></span>开发事项
+        </RouterLink>
         <RouterLink class="nav-link" to="/account"><span class="nav-icon person-icon" aria-hidden="true"></span>我的账号</RouterLink>
         <RouterLink v-if="user.role === 'admin'" class="nav-link" to="/admin/accounts">
           <span class="nav-icon list-icon" aria-hidden="true"></span>账号管理

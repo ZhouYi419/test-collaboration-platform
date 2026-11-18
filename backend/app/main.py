@@ -10,8 +10,10 @@ from .admin import router as admin_router
 from .auth import router as auth_router
 from .config import Settings
 from .issues import router as issues_router
+from .issue_schemas import FIELD_LABELS
 
 field_names = {
+    **FIELD_LABELS,
     "identifier": "用户名或邮箱",
     "username": "用户名",
     "email": "邮箱",

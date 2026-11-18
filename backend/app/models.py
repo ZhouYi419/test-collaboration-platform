@@ -48,18 +48,32 @@ class LoginSession(Base):
 class IssueStatus(StrEnum):
     DRAFT = "draft"
     PENDING_CLAIM = "pending_claim"
+    PENDING_WORK = "pending_work"
+    IN_PROGRESS = "in_progress"
+    PENDING_VERIFY = "pending_verify"
 
 
 class Issue(Base):
     __tablename__ = "issues"
     __table_args__ = (
-        CheckConstraint("status IN ('draft', 'pending_claim')", name="ck_issues_status"),
+        CheckConstraint(
+            "status IN ('draft', 'pending_claim', 'pending_work', 'in_progress', 'pending_verify')",
+            name="ck_issues_status",
+        ),
+        CheckConstraint(
+            "status = 'draft' OR (status = 'pending_claim' AND assignee_id IS NULL) "
+            "OR (status IN ('pending_work', 'in_progress', 'pending_verify') AND assignee_id IS NOT NULL)",
+            name="ck_issues_assignment",
+        ),
         Index("ix_issues_creator_updated", "creator_id", "updated_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    status: Mapped[str] = mapped_column(String(13))
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(14))
+    feedback: Mapped[str | None] = mapped_column(Text)
+    feedback_at: Mapped[int | None] = mapped_column(BigInteger)
     version: Mapped[int] = mapped_column()
     last_write_id: Mapped[UUID] = mapped_column(Uuid)
     updated_at: Mapped[int] = mapped_column(BigInteger)

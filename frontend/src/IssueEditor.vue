@@ -4,7 +4,7 @@ import { ApiError, errorMessage } from './api'
 import IssueField from './IssueField.vue'
 import {
   commonFields, fieldsByType, fileSize, issuesApi, saveFile, typeLabels,
-  type Attachment, type IssueDetail, type IssueType,
+  type Attachment, type IssueDetail, type IssueType, type IssuePerson,
 } from './issuesApi'
 
 const props = defineProps<{ issue: IssueDetail | null }>()
@@ -12,6 +12,10 @@ const emit = defineEmits<{ saved: [id: string, message: string]; expired: [] }>(
 const form = reactive<Record<string, string | null>>({ ...props.issue?.form })
 const issueId = props.issue?.id ?? crypto.randomUUID()
 const attachments = ref<(Attachment | File)[]>([...(props.issue?.attachments ?? [])])
+const assigneeId = ref<number | null>(props.issue?.assignee?.id ?? null)
+const developers = ref<IssuePerson[]>([])
+const developersLoading = ref(true)
+const developersError = ref('')
 const fileInput = ref<HTMLInputElement>()
 const panel = ref<HTMLFormElement>()
 const problem = ref<Record<string, string>>({})
@@ -45,7 +49,24 @@ function confirmRefresh(event: BeforeUnloadEvent) {
   if (dirty.value || busy.value) event.preventDefault()
 }
 
-onMounted(() => window.addEventListener('beforeunload', confirmRefresh))
+async function loadDevelopers() {
+  developersLoading.value = true
+  developersError.value = ''
+  try {
+    developers.value = await issuesApi.developers()
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      dirty.value = false
+      emit('expired')
+    } else developersError.value = errorMessage(error)
+  } finally {
+    developersLoading.value = false
+  }
+}
+onMounted(() => {
+  window.addEventListener('beforeunload', confirmRefresh)
+  void loadDevelopers()
+})
 onUnmounted(() => window.removeEventListener('beforeunload', confirmRefresh))
 
 function confirm(title: string, message: string, label: string) {
@@ -121,7 +142,7 @@ async function download(file: File | Attachment) {
 async function focusError() {
   await nextTick()
   const key = Object.keys(problem.value)[0]
-  const control = key === 'type'
+  const control = key === 'assignee_id' ? document.getElementById('assignee') : key === 'type'
     ? panel.value?.querySelector<HTMLElement>('input[name=type]')
     : document.getElementById(key)
   control?.focus({ preventScroll: true })
@@ -148,6 +169,7 @@ async function handleError(error: unknown, action: string, button: HTMLElement |
   }
   if (error instanceof ApiError && error.code === 'validation_error' && Object.keys(error.fields).length) {
     problem.value = { ...error.fields }
+    if (problem.value.assignee_id) await loadDevelopers()
     if (problem.value.attachments) {
       fileError.value = problem.value.attachments
       delete problem.value.attachments
@@ -184,6 +206,7 @@ async function save(submit: boolean, event: Event) {
       write_id: retry.writeId,
       form: data,
       submit,
+      assignee_id: assigneeId.value,
       keep_attachments: attachments.value.filter((file): file is Attachment => !(file instanceof File)).map(file => file.id),
     }, files)
     dirty.value = false
@@ -233,6 +256,29 @@ async function removeDraft(event: Event) {
           </fieldset>
           <IssueField v-for="field in commonFields" :key="field.key" :field="field" :error="problem[field.key]"
             :model-value="form[field.key] ?? null" @update:model-value="update(field.key, $event)" />
+        </div>
+      </section>
+      <section class="form-section" aria-labelledby="assign-title">
+        <h2 id="assign-title">分配</h2>
+        <div class="form-field assignment-field">
+          <label for="assignee">指定开发</label>
+          <div class="select-control">
+            <select id="assignee" v-model="assigneeId" :disabled="developersLoading || (!developers.length && !assigneeId)"
+              :aria-invalid="!!problem.assignee_id" aria-describedby="assignee-hint assignee-error"
+              @change="delete problem.assignee_id; markDirty()">
+              <option :value="null">未指定</option>
+              <option v-if="assigneeId && !developers.some(person => person.id === assigneeId)" :value="assigneeId" disabled>
+                {{ issue?.assignee?.username ?? '所选开发' }}（不可用）
+              </option>
+              <option v-for="developer in developers" :key="developer.id" :value="developer.id">{{ developer.username }}</option>
+            </select>
+          </div>
+          <p id="assignee-hint" class="file-hint">
+            {{ developersLoading ? '正在加载开发账号…' : !developers.length && !developersError ? '暂无可指派的开发，提交后进入待领取。' : '留空时，提交后进入待领取。' }}
+          </p>
+          <p v-if="developersError" class="field-error" role="alert">{{ developersError }}</p>
+          <button v-if="developersError" class="admin-button" type="button" @click="loadDevelopers">重新加载</button>
+          <p id="assignee-error" class="field-error" role="alert">{{ problem.assignee_id }}</p>
         </div>
       </section>
       <section v-if="activeType" :key="activeType" class="form-section" :class="{ 'type-changed': typeChanged }"

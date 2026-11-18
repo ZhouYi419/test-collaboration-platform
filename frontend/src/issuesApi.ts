@@ -3,8 +3,14 @@ import { request, requestResponse } from './api'
 export const priorityOptions = ['P0', 'P1', 'P2', 'P3']
 export const typeLabels = { bug: 'Bug 修复', request: '需求' }
 export type IssueType = keyof typeof typeLabels
-export type IssueStatus = 'draft' | 'pending_claim'
-export const statusLabels: Record<IssueStatus, string> = { draft: '草稿', pending_claim: '待领取' }
+export type IssueStatus = 'draft' | 'pending_claim' | 'pending_work' | 'in_progress' | 'pending_verify'
+export const statusLabels: Record<IssueStatus, string> = {
+  draft: '草稿', pending_claim: '待领取', pending_work: '待处理', in_progress: '处理中', pending_verify: '待验证',
+}
+export const queues = { inbox: '待领取', assigned: '我的待办', feedback: '已反馈' }
+export type DeveloperQueue = keyof typeof queues
+export type WorkflowAction = 'claim' | 'start' | 'finish'
+export interface IssuePerson { id: number; username: string }
 
 export interface IssueFieldSpec {
   key: string
@@ -61,6 +67,10 @@ export interface IssueDetail extends IssueSummary {
   version: number
   form: Record<string, string | null>
   attachments: Attachment[]
+  creator: IssuePerson
+  assignee: IssuePerson | null
+  feedback: string | null
+  feedback_at: number | null
 }
 
 interface IssueWrite {
@@ -68,11 +78,19 @@ interface IssueWrite {
   write_id: string
   form: Record<string, string | null>
   submit: boolean
+  assignee_id: number | null
   keep_attachments: number[]
 }
 
 export const issuesApi = {
   list: () => request<IssueSummary[]>('issues'),
+  developers: () => request<IssuePerson[]>('issues/developers'),
+  development: (queue: DeveloperQueue) => request<IssueSummary[]>(`issues/development?queue=${queue}`),
+  act: (id: string, action: WorkflowAction, version: number, write_id: string, feedback?: string) =>
+    request<IssueDetail>(`issues/${id}/actions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, version, write_id, feedback }),
+    }),
   get: (id: string) => request<IssueDetail>(`issues/${encodeURIComponent(id)}`),
   save(id: string, data: IssueWrite, files: File[]) {
     const body = new FormData()

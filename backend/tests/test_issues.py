@@ -33,10 +33,12 @@ def session(app, role="tester"):
     return {"Cookie": f"{cookie_name}={token}"}
 
 
-async def write(client, headers, path, *, form=None, files=(), keep=(), version=None, submit=False, write_id=None):
+async def write(client, headers, path, *, form=None, files=(), keep=(), version=None, submit=False, write_id=None,
+                assignee_id=None):
     payload = {
         "write_id": str(write_id or uuid4()), "version": version, "submit": submit,
         "form": form or {}, "keep_attachments": list(keep),
+        "assignee_id": assignee_id,
     }
     return await client.put(path, headers=headers, files=[
         ("data", (None, json.dumps(payload))), *(("files", (name, data)) for name, data in files),
@@ -112,7 +114,8 @@ async def test_issue_and_attachment_permissions_are_owner_scoped(app, client):
         unauthorized = session(app, role)
         assert (await client.get("/api/issues", headers=unauthorized)).status_code == 403
         assert (await write(client, unauthorized, path)).status_code == 403
-        assert (await client.get(f"{path}/attachments/{file_id}", headers=unauthorized)).status_code == 403
+        expected = 404 if role == "developer" else 403
+        assert (await client.get(f"{path}/attachments/{file_id}", headers=unauthorized)).status_code == expected
     assert (await client.get("/api/issues", headers=other)).json() == []
     assert (await client.get(path, headers=other)).status_code == 404
     assert (await client.get(f"{path}/attachments/{file_id}", headers=other)).status_code == 404

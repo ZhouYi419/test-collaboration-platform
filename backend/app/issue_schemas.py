@@ -18,6 +18,7 @@ FIELD_LABELS = {
     "actual": "实际结果", "expected": "预期结果", "version_affected": "影响版本",
     "background": "需求背景", "outcome": "期望效果", "acceptance": "验收标准",
     "scope": "影响范围", "due": "期望完成日期",
+    "assignee_id": "指定开发", "feedback": "处理说明",
 }
 COMMON_FIELDS = ("type", "priority", "title", "description")
 REQUIRED_BY_TYPE = {
@@ -73,6 +74,7 @@ class IssueWrite(BaseModel):
     version: Annotated[int, Field(strict=True, ge=1)] | None = None
     write_id: UUID
     submit: bool
+    assignee_id: Annotated[int, Field(strict=True, ge=1)] | None = None
     form: IssueForm
     keep_attachments: list[Annotated[int, Field(strict=True, ge=1)]] = Field(max_length=5)
 
@@ -92,11 +94,36 @@ class IssueSummary(BaseModel):
     type: IssueType | None
     title: str | None
     priority: Priority | None
-    status: Literal["draft", "pending_claim"]
+    status: Literal["draft", "pending_claim", "pending_work", "in_progress", "pending_verify"]
     updated_at: int
+
+
+class IssuePerson(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
 
 
 class IssueDetail(IssueSummary):
     version: int
     form: IssueForm
     attachments: list[AttachmentInfo]
+    creator: IssuePerson
+    assignee: IssuePerson | None
+    feedback: str | None
+    feedback_at: int | None
+
+
+class IssueAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Annotated[int, Field(strict=True, ge=1)]
+    write_id: UUID
+    action: Literal["claim", "start", "finish"]
+    feedback: LongText | None = None
+
+    @field_validator("feedback")
+    @classmethod
+    def validate_feedback(cls, value: str | None) -> str | None:
+        return IssueForm.normalize_text(value)

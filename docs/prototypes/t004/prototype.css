@@ -1,0 +1,86 @@
+.issue-head.is-queue { margin-bottom: 16px; }
+.queue-tabs {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.queue-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  position: relative;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  padding-inline: 2px;
+}
+.queue-tab:hover { color: var(--accent); }
+.queue-tab[aria-current="page"] { color: var(--accent-dark); font-weight: 700; }
+.queue-tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  background: var(--accent);
+}
+.issue-state[data-status="claim"] { background: #eeeee7; color: #575f51; }
+.issue-state[data-status="todo"] { background: #f4eddc; color: #754f24; }
+.issue-state[data-status="progress"] { background: #e6eeed; color: #305a52; }
+.workflow-notice { margin-bottom: 14px; }
+.assignment-field { max-width: calc((100% - 20px) / 2); }
+.workflow-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.workflow-heading .issue-state { margin: 0; }
+.workflow-updated { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.workflow-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 20px; }
+.workflow-summary dd { overflow-wrap: anywhere; }
+.detail-section + .form-actions { margin-top: 5px; }
+.issue-detail .detail-head h1 { font-size: 36px; line-height: 1.26; letter-spacing: -.025em; }
+.issue-detail :is(.detail-text, .detail-grid dd) { font-size: 15px; line-height: 1.6; }
+.issue-detail :is(.detail-text, .detail-grid .wide dd, #process-form .form-field) { max-inline-size: 760px; }
+.workflow-feedback .detail-text { margin-bottom: 10px; }
+.feedback-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 16px; }
+.feedback-heading h2 { margin: 0; }
+.feedback-receipt { color: var(--accent); font-size: 12px; font-weight: 650; }
+.feedback-time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#feedback { min-height: 132px; }
+.workflow-feedback h2[tabindex="-1"]:focus { outline: none; }
+#process-form .workflow-feedback { padding-bottom: 0; }
+#process-form .form-actions { position: static; border-top: 0; }
+.review-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px;
+  margin-top: auto;
+  padding: 8px 5px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.review-switcher a { display: inline-flex; align-items: center; min-height: 33px; padding: 0 6px; border-radius: 5px; }
+.review-switcher a[aria-current="true"] { background: #e3ebe2; color: var(--accent-dark); font-weight: 700; }
+.review-label { flex: 1 0 100%; color: var(--muted); margin-bottom: 2px; }
+.review-switcher:not([hidden]) + .workspace-identity { margin-top: 0; }
+body:has(.workflow-actions):not(:has(#process-form)) .issue-notice { bottom: 86px; }
+.review-switcher a:focus-visible { outline-offset: -1px; }
+@media (max-width: 940px) {
+  .queue-tabs { margin-bottom: 0; }
+  .queue-tabs + .issue-table, .queue-tabs + .issue-empty { border-top: 0; }
+}
+@media (max-width: 760px) {
+  .issue-head.is-queue { margin-bottom: 12px; }
+  .workflow-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .issue-detail .detail-head h1 { font-size: 28px; }
+  .assignment-field { max-width: none; }
+  .queue-tabs { gap: 17px; }
+  .review-switcher { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 4px; padding: 8px 20px; }
+  .review-label { grid-column: 1 / -1; margin: 0; }
+  .review-switcher a { justify-content: center; min-height: 44px; }
+}

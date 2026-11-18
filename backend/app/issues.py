@@ -2,14 +2,14 @@ import time
 from codecs import BOM_UTF16_BE, BOM_UTF16_LE
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ValidationError
 from python_multipart.exceptions import MultipartParseError
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import load_only
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
@@ -18,9 +18,10 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 
 from .auth import Database, auth_error, get_current_user
 from .issue_schemas import (
-    COMMON_FIELDS, FIELD_LABELS, AttachmentInfo, IssueDetail, IssueForm, IssueSummary, IssueWrite,
+    COMMON_FIELDS, FIELD_LABELS, AttachmentInfo, IssueAction, IssueDetail, IssueForm, IssuePerson,
+    IssueSummary, IssueWrite,
 )
-from .models import Issue, IssueAttachment, IssueStatus, User, UserRole
+from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, User, UserRole
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
 MAX_FILES = 5
@@ -36,6 +37,31 @@ def require_tester(user: Annotated[User, Depends(get_current_user)]) -> User:
 
 
 Tester = Annotated[User, Depends(require_tester)]
+
+
+def require_issue_user(user: Annotated[User, Depends(get_current_user)]) -> User:
+    if user.role not in {UserRole.TESTER, UserRole.DEVELOPER}:
+        raise auth_error(403, "issue_role_required", "当前账号无权访问事项")
+    return user
+
+
+def require_developer(user: Annotated[User, Depends(get_current_user)]) -> User:
+    if user.role != UserRole.DEVELOPER:
+        raise auth_error(403, "developer_required", "开发事项仅向开发人员开放")
+    return user
+
+
+IssueUser = Annotated[User, Depends(require_issue_user)]
+Developer = Annotated[User, Depends(require_developer)]
+
+
+def visible_to(user: User):
+    if user.role == UserRole.TESTER:
+        return Issue.creator_id == user.id
+    return or_(
+        Issue.status == IssueStatus.PENDING_CLAIM,
+        and_(Issue.assignee_id == user.id, Issue.status != IssueStatus.DRAFT),
+    )
 
 
 def validation_error(fields: dict[str, str]) -> HTTPException:
@@ -136,7 +162,37 @@ def issue_detail(db: Database, issue: Issue) -> IssueDetail:
     return IssueDetail(
         **IssueSummary.model_validate(issue).model_dump(), version=issue.version, form=form,
         attachments=[AttachmentInfo.model_validate(file) for file in files],
+        creator=IssuePerson.model_validate(db.get(User, issue.creator_id)),
+        assignee=IssuePerson.model_validate(db.get(User, issue.assignee_id)) if issue.assignee_id else None,
+        feedback=issue.feedback, feedback_at=issue.feedback_at,
     )
+
+
+@router.get("/developers", response_model=list[IssuePerson])
+def list_developers(db: Database, _: Tester):
+    return db.scalars(
+        select(User).options(load_only(User.id, User.username))
+        .where(User.role == UserRole.DEVELOPER, User.status == AccountStatus.ACTIVE)
+        .order_by(User.username_key, User.id)
+    ).all()
+
+
+@router.get("/development", response_model=list[IssueSummary])
+def developer_issues(
+    db: Database, user: Developer, queue: Literal["inbox", "assigned", "feedback"] = "inbox",
+):
+    conditions = {
+        "inbox": Issue.status == IssueStatus.PENDING_CLAIM,
+        "assigned": and_(Issue.assignee_id == user.id, Issue.status.in_([
+            IssueStatus.PENDING_WORK, IssueStatus.IN_PROGRESS,
+        ])),
+        "feedback": and_(Issue.assignee_id == user.id, Issue.status == IssueStatus.PENDING_VERIFY),
+    }
+    return db.scalars(
+        select(Issue).options(load_only(
+            Issue.id, Issue.type, Issue.title, Issue.priority, Issue.status, Issue.updated_at,
+        )).where(conditions[queue]).order_by(Issue.updated_at.desc(), Issue.id)
+    ).all()
 
 
 @router.get("", response_model=list[IssueSummary])
@@ -150,9 +206,11 @@ def list_issues(db: Database, user: Tester):
 
 
 @router.get("/{issue_id}", response_model=IssueDetail)
-def get_issue(issue_id: UUID, db: Database, user: Tester) -> IssueDetail:
-    issue = db.get(Issue, issue_id, with_for_update={"read": True})
-    if issue is None or issue.creator_id != user.id:
+def get_issue(issue_id: UUID, db: Database, user: IssueUser) -> IssueDetail:
+    issue = db.scalar(
+        select(Issue).where(Issue.id == issue_id, visible_to(user)).with_for_update(read=True)
+    )
+    if issue is None:
         raise not_found()
     return issue_detail(db, issue)
 
@@ -178,6 +236,12 @@ def save_issue(
     if data.submit and (fields := data.form.missing_fields()):
         raise validation_error(fields)
 
+    if data.assignee_id is not None:
+        # 锁住候选账号，使提交校验与停用、角色修改按事务顺序生效。
+        assignee = db.get(User, data.assignee_id, with_for_update={"read": True}, populate_existing=True)
+        if assignee is None or assignee.role != UserRole.DEVELOPER or assignee.status != AccountStatus.ACTIVE:
+            raise validation_error({"assignee_id": "该开发账号已不可用，请重新选择。"})
+
     current_ids = set(db.scalars(select(IssueAttachment.id).where(IssueAttachment.issue_id == issue_id)))
     keep_ids = set(data.keep_attachments)
     if not keep_ids.issubset(current_ids):
@@ -190,7 +254,10 @@ def save_issue(
     issue.details = data.form.detail_values()
     issue.updated_at = time.time_ns() // 1_000_000
     issue.last_write_id = data.write_id
-    issue.status = IssueStatus.PENDING_CLAIM if data.submit else IssueStatus.DRAFT
+    issue.assignee_id = data.assignee_id
+    issue.status = IssueStatus.DRAFT
+    if data.submit:
+        issue.status = IssueStatus.PENDING_WORK if data.assignee_id else IssueStatus.PENDING_CLAIM
     try:
         db.add(issue)
         db.flush()
@@ -216,6 +283,52 @@ def save_issue(
     return result
 
 
+@router.post("/{issue_id}/actions", response_model=IssueDetail)
+def act_on_issue(issue_id: UUID, data: IssueAction, db: Database, user: Developer) -> IssueDetail:
+    issue = db.get(Issue, issue_id, with_for_update=True)
+    if issue is None or issue.status == IssueStatus.DRAFT:
+        raise not_found()
+    if data.action == "claim" and issue.status != IssueStatus.PENDING_CLAIM and issue.assignee_id != user.id:
+        raise auth_error(409, "claim_unavailable", "该事项已被其他开发领取。")
+    if issue.status != IssueStatus.PENDING_CLAIM and issue.assignee_id != user.id:
+        raise not_found()
+    if issue.last_write_id == data.write_id:
+        return issue_detail(db, issue)
+    expected = {"claim": IssueStatus.PENDING_CLAIM, "start": IssueStatus.PENDING_WORK, "finish": IssueStatus.IN_PROGRESS}
+    if issue.version != data.version or issue.status != expected[data.action]:
+        raise conflict()
+    if data.action != "claim" and issue.assignee_id != user.id:
+        raise not_found()
+    if data.action == "finish" and not data.feedback:
+        raise validation_error({"feedback": "请填写处理说明"})
+
+    now = time.time_ns() // 1_000_000
+    if data.action == "claim":
+        issue.assignee_id = user.id
+        issue.status = IssueStatus.PENDING_WORK
+    elif data.action == "start":
+        issue.status = IssueStatus.IN_PROGRESS
+    else:
+        issue.feedback = data.feedback
+        issue.feedback_at = now
+        issue.status = IssueStatus.PENDING_VERIFY
+    issue.updated_at = now
+    issue.last_write_id = data.write_id
+    try:
+        db.flush()
+        result = issue_detail(db, issue)
+        db.commit()
+    except StaleDataError:
+        db.rollback()
+        current = db.get(Issue, issue_id, with_for_update={"read": True})
+        if current and current.assignee_id == user.id and current.last_write_id == data.write_id:
+            return issue_detail(db, current)
+        if data.action == "claim":
+            raise auth_error(409, "claim_unavailable", "该事项已被其他开发领取。") from None
+        raise conflict() from None
+    return result
+
+
 @router.delete("/{issue_id}", status_code=204)
 def delete_draft(issue_id: UUID, db: Database, user: Tester, version: Annotated[int, Query(ge=1)]) -> Response:
     issue = db.get(Issue, issue_id, with_for_update=True)
@@ -234,11 +347,11 @@ def delete_draft(issue_id: UUID, db: Database, user: Tester, version: Annotated[
 
 
 @router.get("/{issue_id}/attachments/{attachment_id}")
-def download_attachment(issue_id: UUID, attachment_id: int, db: Database, user: Tester) -> Response:
+def download_attachment(issue_id: UUID, attachment_id: int, db: Database, user: IssueUser) -> Response:
     row = db.execute(
         select(IssueAttachment.name, IssueAttachment.content)
         .join(Issue, Issue.id == IssueAttachment.issue_id)
-        .where(IssueAttachment.id == attachment_id, Issue.id == issue_id, Issue.creator_id == user.id)
+        .where(IssueAttachment.id == attachment_id, Issue.id == issue_id, visible_to(user))
     ).one_or_none()
     if row is None:
         raise not_found()

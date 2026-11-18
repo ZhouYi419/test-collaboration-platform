@@ -33,7 +33,10 @@ def upgrade() -> None:
         "issues",
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("creator_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("status", sa.String(13), nullable=False),
+        sa.Column("assignee_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
+        sa.Column("status", sa.String(14), nullable=False),
+        sa.Column("feedback", sa.Text(), nullable=True),
+        sa.Column("feedback_at", sa.BigInteger(), nullable=True),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("last_write_id", sa.Uuid(), nullable=False),
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
@@ -42,9 +45,18 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("priority", sa.String(2), nullable=True),
         sa.Column("details", sa.JSON(), nullable=False),
-        sa.CheckConstraint("status IN ('draft', 'pending_claim')", name="ck_issues_status"),
+        sa.CheckConstraint(
+            "status IN ('draft', 'pending_claim', 'pending_work', 'in_progress', 'pending_verify')",
+            name="ck_issues_status",
+        ),
+        sa.CheckConstraint(
+            "status = 'draft' OR (status = 'pending_claim' AND assignee_id IS NULL) "
+            "OR (status IN ('pending_work', 'in_progress', 'pending_verify') AND assignee_id IS NOT NULL)",
+            name="ck_issues_assignment",
+        ),
     )
     op.create_index("ix_issues_creator_updated", "issues", ["creator_id", "updated_at", "id"])
+    op.create_index("ix_issues_assignee_id", "issues", ["assignee_id"])
     op.create_table(
         "issue_attachments",
         sa.Column("id", sa.Integer(), primary_key=True),
