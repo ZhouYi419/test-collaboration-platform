@@ -1,4 +1,4 @@
-import { request, requestResponse } from './api'
+import { request, requestBlob, writeJson } from './http'
 
 export const priorityOptions = ['P0', 'P1', 'P2', 'P3']
 export const typeLabels = { bug: 'Bug 修复', request: '需求' }
@@ -87,10 +87,7 @@ export const issuesApi = {
   developers: () => request<IssuePerson[]>('issues/developers'),
   development: (queue: DeveloperQueue) => request<IssueSummary[]>(`issues/development?queue=${queue}`),
   act: (id: string, action: WorkflowAction, version: number, write_id: string, feedback?: string) =>
-    request<IssueDetail>(`issues/${id}/actions`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, version, write_id, feedback }),
-    }),
+    writeJson<IssueDetail>('POST', `issues/${id}/actions`, { action, version, write_id, feedback }),
   get: (id: string) => request<IssueDetail>(`issues/${encodeURIComponent(id)}`),
   save(id: string, data: IssueWrite, files: File[]) {
     const body = new FormData()
@@ -100,8 +97,7 @@ export const issuesApi = {
   },
   delete: (id: string, version: number) => request<void>(`issues/${id}?version=${version}`, { method: 'DELETE' }),
   async download(id: string, file: Attachment) {
-    const response = await requestResponse(`issues/${id}/attachments/${file.id}`)
-    saveFile(await response.blob(), file.name)
+    saveFile(await requestBlob(`issues/${id}/attachments/${file.id}`), file.name)
   },
 }
 

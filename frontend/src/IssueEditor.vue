@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ApiError, errorMessage } from './api'
+import ConfirmDialog from './ConfirmDialog.vue'
 import IssueField from './IssueField.vue'
 import IssueIcon from './IssueIcon.vue'
 import {
@@ -30,11 +31,7 @@ const dirty = ref(false)
 const typeChanged = ref(false)
 const activeType = computed(() => form.type as IssueType | null)
 const specificFields = computed(() => activeType.value ? fieldsByType[activeType.value] : [])
-const dialog = ref<HTMLDialogElement>()
-const confirmTitle = ref('')
-const confirmMessage = ref('')
-const confirmLabel = ref('')
-let resolveConfirmation: ((confirmed: boolean) => void) | undefined
+const confirmation = ref<InstanceType<typeof ConfirmDialog>>()
 let retry: { submit: boolean; writeId: string } | undefined
 
 function update(key: string, value: string | null | undefined) {
@@ -89,30 +86,12 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('beforeunload', confirmRefresh)
-  resolveConfirmation?.(false)
 })
-
-function confirm(title: string, message: string, label: string) {
-  if (resolveConfirmation) return Promise.resolve(false)
-  confirmTitle.value = title
-  confirmMessage.value = message
-  confirmLabel.value = label
-  return new Promise<boolean>(resolve => {
-    resolveConfirmation = resolve
-    dialog.value?.showModal()
-  })
-}
-
-function finishConfirmation(confirmed: boolean) {
-  dialog.value?.close()
-  resolveConfirmation?.(confirmed)
-  resolveConfirmation = undefined
-}
 
 async function confirmLeave() {
   if (busy.value) return false
   if (!dirty.value) return true
-  return confirm('放弃本次修改？', '本次修改尚未保存。', '放弃修改')
+  return confirmation.value?.ask({ title: '放弃本次修改？', message: '本次修改尚未保存。', label: '放弃修改', danger: true }) ?? false
 }
 
 defineExpose({ confirmLeave })
@@ -247,7 +226,7 @@ async function removeDraft(event: Event) {
   const issue = props.issue
   if (!issue || busy.value) return
   const button = event.currentTarget as HTMLElement
-  if (!await confirm('删除草稿？', '草稿及附件将一并删除。', '删除草稿')) return
+  if (!await confirmation.value?.ask({ title: '删除草稿？', message: '草稿及附件将一并删除。', label: '删除草稿', danger: true })) return
   actionError.value = ''
   busy.value = '删除'
   try {
@@ -357,17 +336,5 @@ async function removeDraft(event: Event) {
       </div>
     </div>
   </form>
-  <dialog ref="dialog" class="account-editor issue-confirm" aria-labelledby="issue-confirm-title"
-    @cancel.prevent="finishConfirmation(false)">
-    <form method="dialog" @submit.prevent="finishConfirmation(true)">
-      <div class="editor-body">
-        <h2 id="issue-confirm-title">{{ confirmTitle }}</h2>
-        <p>{{ confirmMessage }}</p>
-      </div>
-      <div class="editor-actions">
-        <button class="admin-button" type="button" autofocus @click="finishConfirmation(false)">取消</button>
-        <button class="admin-primary danger-button" type="submit">{{ confirmLabel }}</button>
-      </div>
-    </form>
-  </dialog>
+  <ConfirmDialog ref="confirmation" />
 </template>

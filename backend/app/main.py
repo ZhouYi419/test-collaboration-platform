@@ -9,32 +9,9 @@ from sqlalchemy.orm import sessionmaker
 from .admin import router as admin_router
 from .auth import router as auth_router
 from .config import Settings
+from .errors import validation_error
 from .issues import router as issues_router
-from .issue_schemas import FIELD_LABELS
-
-field_names = {
-    **FIELD_LABELS,
-    "identifier": "用户名或邮箱",
-    "username": "用户名",
-    "email": "邮箱",
-    "password": "密码",
-    "confirm_password": "确认密码",
-    "role": "角色",
-    "status": "账号状态",
-}
-
-
-def validation_message(error: dict, field: str) -> str:
-    if error["type"] == "invalid_input":
-        return error["msg"]
-    if field == "password":
-        if error["type"] == "string_too_short":
-            if error["ctx"]["min_length"] == 8 and error.get("input") != "":
-                return "密码至少 8 位"
-            return "请输入密码"
-        if error["type"] == "string_too_long":
-            return "密码最多 128 位"
-    return f"请填写有效的{field_names[field]}"
+from .validation import validation_fields
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -43,8 +20,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        yield
-        engine.dispose()
+        try:
+            yield
+        finally:
+            engine.dispose()
 
     app = FastAPI(
         title="测试协作平台 API",
@@ -79,14 +58,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError):
-        fields = {}
-        for error in exc.errors():
-            field = error["loc"][-1]
-            if field in field_names:
-                fields[field] = validation_message(error, field)
-        return JSONResponse(status_code=422, content={
-            "detail": {"code": "validation_error", "message": "请检查表单输入", "fields": fields},
-        })
+        error = validation_error(validation_fields(exc.errors()))
+        return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
 
     return app
 

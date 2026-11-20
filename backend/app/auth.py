@@ -4,12 +4,14 @@ import time
 from typing import Annotated
 
 from email_validator import EmailNotValidError
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, Request, Response
 from pwdlib import PasswordHash
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .database import Database
+from .errors import api_error
 from .models import AccountStatus, LoginSession, User
 from .schemas import AuthErrorResponse, Credentials, CurrentUser, Registration, UserIdentity, normalize_email
 
@@ -18,19 +20,7 @@ password_hash = PasswordHash.recommended()
 dummy_hash = password_hash.hash(secrets.token_urlsafe(32))
 cookie_name = "collaboration_session"
 session_lifetime = 12 * 60 * 60
-
-
-def get_db(request: Request):
-    with request.app.state.session_factory() as db:
-        yield db
-
-
-Database = Annotated[Session, Depends(get_db)]
 SessionCookie = Annotated[str | None, Cookie(alias=cookie_name)]
-
-
-def auth_error(status: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status, detail={"code": code, "message": message})
 
 
 def digest_token(token: str) -> str:
@@ -69,9 +59,9 @@ def register(data: Registration, db: Database) -> User:
     except IntegrityError:
         db.rollback()
         if db.scalar(select(User.id).where(User.username_key == user.username_key)) is not None:
-            raise auth_error(409, "username_taken", "该用户名已被使用") from None
+            raise api_error(409, "username_taken", "该用户名已被使用") from None
         if db.scalar(select(User.id).where(User.email == user.email)) is not None:
-            raise auth_error(409, "email_taken", "该邮箱已被使用") from None
+            raise api_error(409, "email_taken", "该邮箱已被使用") from None
         raise
     return user
 
@@ -100,15 +90,15 @@ def login(
     user = find_user(db, data.identifier)
     stored_hash = user.password_hash if user is not None else dummy_hash
     if not password_hash.verify(data.password, stored_hash) or user is None:
-        raise auth_error(401, "invalid_credentials", "用户名、邮箱或密码错误")
+        raise api_error(401, "invalid_credentials", "用户名、邮箱或密码错误")
     # 与停用操作锁定同一个账号，避免停用与登录同时提交时留下可复用的会话。
     user = db.get(User, user.id, with_for_update=True, populate_existing=True)
     if user is None:
-        raise auth_error(401, "invalid_credentials", "用户名、邮箱或密码错误")
+        raise api_error(401, "invalid_credentials", "用户名、邮箱或密码错误")
     if user.status == AccountStatus.DISABLED:
-        raise auth_error(403, "account_disabled", "账号已停用，请联系管理员")
+        raise api_error(403, "account_disabled", "账号已停用，请联系管理员")
     if user.status != AccountStatus.ACTIVE:
-        raise auth_error(403, "account_inactive", "账号尚未启用，请联系管理员")
+        raise api_error(403, "account_inactive", "账号尚未启用，请联系管理员")
 
     now = int(time.time())
     db.execute(delete(LoginSession).where(LoginSession.user_id == user.id, LoginSession.expires_at <= now))
@@ -137,7 +127,7 @@ def get_current_user(db: Database, token: SessionCookie = None) -> User:
         )
         if user is not None:
             return user
-    raise auth_error(401, "authentication_required", "请先登录")
+    raise api_error(401, "authentication_required", "请先登录")
 
 
 @router.get(

@@ -3,7 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 
-from .auth import Database, auth_error, can_grant_admin, get_current_user
+from .auth import can_grant_admin, get_current_user
+from .database import Database
+from .errors import api_error
 from .models import AccountStatus, LoginSession, User, UserRole
 from .schemas import AccountPage, AccountUpdate, AuthErrorResponse, ManagedAccount
 
@@ -21,12 +23,12 @@ PageNumber = Annotated[int, Query(ge=1, le=1_000_000)]
 
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> None:
     if user.role != UserRole.ADMIN:
-        raise auth_error(403, "admin_required", "仅管理员可访问账号管理")
+        raise api_error(403, "admin_required", "仅管理员可访问账号管理")
 
 
 def require_server_operator(request: Request, user: Annotated[User, Depends(get_current_user)]) -> None:
     if not can_grant_admin(request, user):
-        raise auth_error(403, "server_operator_required", "此页面需要服务器操作权限")
+        raise api_error(403, "server_operator_required", "此页面需要服务器操作权限")
 
 
 @router.get("/accounts", response_model=AccountPage, dependencies=[Depends(require_admin)])
@@ -44,7 +46,7 @@ def list_accounts(db: Database, page: PageNumber = 1) -> AccountPage:
 def lock_account(db: Database, account_id: int) -> User:
     user = db.get(User, account_id, with_for_update=True, populate_existing=True)
     if user is None:
-        raise auth_error(404, "account_not_found", "未找到该账号")
+        raise api_error(404, "account_not_found", "未找到该账号")
     return user
 
 
@@ -71,12 +73,12 @@ def grant_admin(account_id: int, db: Database) -> User:
 def update_account(account_id: int, data: AccountUpdate, db: Database) -> User:
     user = lock_account(db, account_id)
     if user.role == UserRole.ADMIN:
-        raise auth_error(403, "admin_account_protected", "管理员账号由服务操作人员维护")
+        raise api_error(403, "admin_account_protected", "管理员账号由服务操作人员维护")
 
     if data.role is not None:
         user.role = data.role
     if data.status == AccountStatus.ACTIVE and user.role is None:
-        raise auth_error(409, "role_required", "启用前请选择测试或开发角色")
+        raise api_error(409, "role_required", "启用前请选择测试或开发角色")
     if data.status is not None:
         user.status = data.status
     if data.status == AccountStatus.DISABLED:

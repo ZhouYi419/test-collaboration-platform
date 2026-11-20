@@ -88,11 +88,14 @@ docker compose up -d --force-recreate api web
 ..\.venv\Scripts\python.exe -m pytest -q
 ```
 
-在 `frontend/` 运行类型检查和构建。
+在 `frontend/` 运行请求层回归、类型检查和构建。请求层测试使用 Node.js 24 内置测试运行器。
 
 ```powershell
+npm.cmd test
 npm.cmd run build
 ```
+
+前端 API 请求默认在 60 秒后超时，覆盖响应体和附件读取。写请求不自动重试；事项保存和处理的手动重试沿用原请求标识。当前仓库尚未配置 GitHub Actions，CI 与报告归档列在后续任务中。
 
 ## 项目文档
 

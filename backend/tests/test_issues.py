@@ -4,9 +4,12 @@ import time
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.auth import cookie_name, digest_token
-from app.models import LoginSession, User
+from app.issue_schemas import IssueWrite
+from app.models import IssueAttachment, LoginSession, User
+from app.validation import validation_fields
 
 pytestmark = pytest.mark.anyio
 BUG = {
@@ -163,3 +166,57 @@ async def test_idempotent_create_and_concurrent_draft_submission(app, client):
     )
     assert sorted(response.status_code for response in responses) == [200, 409]
     assert len((await client.get("/api/issues", headers=owner)).json()) == 1
+
+
+async def test_upload_parser_rejects_malformed_input_after_authorization(app, client):
+    path = f"/api/issues/{uuid4()}"
+    assert (await client.put(path, json={})).status_code == 401
+    developer = session(app, "developer")
+    assert (await client.put(path, headers=developer, json={})).status_code == 403
+    owner = session(app)
+    assert (await client.put(path, headers=owner, json={})).status_code == 415
+    missing_boundary = await client.put(path, headers={**owner, "Content-Type": "multipart/form-data"}, content=b"broken")
+    assert missing_boundary.status_code == 422
+    assert "attachments" in missing_boundary.json()["detail"]["fields"]
+    invalid_payload = await client.put(path, headers=owner, files=[("data", (None, "{"))])
+    assert invalid_payload.status_code == 422
+    assert (await client.get("/api/issues", headers=owner)).json() == []
+
+
+async def test_multipart_uses_shared_field_validation_without_exposing_input(app, client):
+    owner = session(app)
+    path = f"/api/issues/{uuid4()}"
+    form = {**BUG, "title": "private-title" * 20, "priority": "invalid-priority"}
+    payload = {"write_id": str(uuid4()), "submit": False, "form": form, "keep_attachments": []}
+    with pytest.raises(ValidationError) as invalid:
+        IssueWrite.model_validate(payload)
+    response = await write(client, owner, path, form=form)
+    assert response.status_code == 422
+    assert response.json()["detail"]["fields"] == validation_fields(invalid.value.errors()) == {
+        "title": "请填写有效的标题", "priority": "请填写有效的优先级",
+    }
+    assert "private-title" not in response.text
+    assert "invalid-priority" not in response.text
+
+
+async def test_attachment_write_failure_rolls_back_removed_files_and_issue(app, client):
+    from sqlalchemy import event
+
+    owner = session(app)
+    path = f"/api/issues/{uuid4()}"
+    original = await write(client, owner, path, form={"title": "原草稿"}, files=[("original.txt", b"original")])
+    assert original.status_code == 200
+    draft = original.json()
+
+    def fail_attachment_insert(mapper, connection, target):
+        raise RuntimeError("模拟附件持久化失败")
+
+    event.listen(IssueAttachment, "before_insert", fail_attachment_insert)
+    try:
+        with pytest.raises(RuntimeError, match="模拟附件持久化失败"):
+            await write(client, owner, path, form=BUG, version=draft["version"], submit=True, files=[("new.txt", b"new")])
+    finally:
+        event.remove(IssueAttachment, "before_insert", fail_attachment_insert)
+    assert (await client.get(path, headers=owner)).json() == draft
+    file_id = draft["attachments"][0]["id"]
+    assert (await client.get(f"{path}/attachments/{file_id}", headers=owner)).content == b"original"
