@@ -1,0 +1,60 @@
+.announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.issue-surface .item-symbol .issue-icon { width: 17px; height: 17px; }
+.issue-surface .issue-icon { width: 16px; height: 16px; }
+.issue-surface .issue-state[data-status="closed"] { background: #edf3ef; color: #356145; }
+.issue-surface .form-field { scroll-margin-bottom: 16px; }
+.issue-surface .review-surface { padding: 0; }
+.issue-surface .review-surface .detail-section { padding: 17px 18px; }
+.issue-surface .review-surface .detail-section + .detail-section { border-top: 1px solid #eeedf2; }
+.issue-surface .review-surface .detail-section h2 { margin-bottom: 10px; }
+.review-meta { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.review-outcome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: #356145;
+  font-weight: 680;
+}
+.review-outcome[data-outcome="returned"] { color: #884844; }
+.review-reason { margin-block: 8px 10px; }
+.review-surface .review-actions { flex-wrap: wrap; }
+.review-surface .review-actions > button { white-space: nowrap; }
+.review-surface .review-actions > .admin-primary { flex: 0 1 auto; }
+.review-surface .review-editor > .review-actions,
+.review-surface .review-editor > .action-error { margin-top: 13px; }
+.review-surface .form-field textarea { min-height: 116px; }
+.review-surface .flow-receipt { color: var(--accent-dark); font-weight: 650; }
+.review-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px var(--workspace-gutter);
+  border-top: 1px solid var(--line);
+  background: #f0edf5;
+  color: var(--muted);
+  font-size: 13px;
+}
+.review-controls > span { margin-inline-end: 5px; }
+
+@media (max-width: 800px) {
+  .issue-surface .review-surface .detail-section { padding: 15px; }
+  .issue-surface .review-jump { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; min-height: 38px; }
+}
+
+@media (max-width: 760px) {
+  .review-surface .review-actions > .admin-primary { flex: 1.25; }
+}
+
+@media (max-width: 360px) {
+  .issue-surface .review-jump { margin-inline-start: 0; }
+}
