@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ApiError, errorMessage } from './api'
 import IssueField from './IssueField.vue'
+import IssueIcon from './IssueIcon.vue'
 import {
   commonFields, fieldsByType, fileSize, issuesApi, saveFile, typeLabels,
   type Attachment, type IssueDetail, type IssueType, type IssuePerson,
@@ -13,6 +14,9 @@ const form = reactive<Record<string, string | null>>({ ...props.issue?.form })
 const issueId = props.issue?.id ?? crypto.randomUUID()
 const attachments = ref<(Attachment | File)[]>([...(props.issue?.attachments ?? [])])
 const assigneeId = ref<number | null>(props.issue?.assignee?.id ?? null)
+const assigneeName = ref(props.issue?.assignee?.username)
+const assignee = ref<HTMLSelectElement>()
+const assignHeading = ref<HTMLElement>()
 const developers = ref<IssuePerson[]>([])
 const developersLoading = ref(true)
 const developersError = ref('')
@@ -45,15 +49,21 @@ function markDirty() {
   dirty.value = true
 }
 
+function changeAssignee() {
+  assigneeName.value = developers.value.find(person => person.id === assigneeId.value)?.username
+  delete problem.value.assignee_id
+  markDirty()
+}
+
 function confirmRefresh(event: BeforeUnloadEvent) {
   if (dirty.value || busy.value) event.preventDefault()
 }
 
 async function loadDevelopers() {
   developersLoading.value = true
-  developersError.value = ''
   try {
     developers.value = await issuesApi.developers()
+    developersError.value = ''
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       dirty.value = false
@@ -63,13 +73,27 @@ async function loadDevelopers() {
     developersLoading.value = false
   }
 }
+
+async function retryDevelopers() {
+  if (developersLoading.value) return
+  await loadDevelopers()
+  await nextTick()
+  if (!developersError.value) {
+    const target = assignee.value?.disabled ? assignHeading.value : assignee.value
+    target?.focus()
+  }
+}
 onMounted(() => {
   window.addEventListener('beforeunload', confirmRefresh)
   void loadDevelopers()
 })
-onUnmounted(() => window.removeEventListener('beforeunload', confirmRefresh))
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', confirmRefresh)
+  resolveConfirmation?.(false)
+})
 
 function confirm(title: string, message: string, label: string) {
+  if (resolveConfirmation) return Promise.resolve(false)
   confirmTitle.value = title
   confirmMessage.value = message
   confirmLabel.value = label
@@ -184,6 +208,7 @@ async function handleError(error: unknown, action: string, button: HTMLElement |
     ? `网络连接失败，请重试${action}。` : errorMessage(error)
   await nextTick()
   button?.focus({ preventScroll: true })
+  panel.value?.querySelector('.form-actions')?.scrollIntoView({ block: 'nearest' })
 }
 
 async function save(submit: boolean, event: Event) {
@@ -239,86 +264,96 @@ async function removeDraft(event: Event) {
 
 <template>
   <form id="issue-form" ref="panel" novalidate @submit.prevent="save(true, $event)">
-    <fieldset class="editor-inputs" :disabled="!!busy">
-      <section class="form-section" aria-labelledby="basic-title">
-        <h2 id="basic-title">基本信息</h2>
-        <div class="form-grid basic-grid">
-          <fieldset class="type-field">
-            <legend>申请类型<span class="required" aria-hidden="true">*</span></legend>
-            <div class="choices" :aria-invalid="!!problem.type">
-              <label v-for="(label, value) in typeLabels" :key="value" class="choice">
-                <input type="radio" name="type" :value="value" :checked="activeType === value"
-                  aria-required="true" :aria-describedby="problem.type ? 'type-error' : undefined"
-                  @change="update('type', value)">{{ label }}
-              </label>
-            </div>
-            <p v-if="problem.type" id="type-error" class="field-error">{{ problem.type }}</p>
-          </fieldset>
-          <IssueField v-for="field in commonFields" :key="field.key" :field="field" :error="problem[field.key]"
-            :model-value="form[field.key] ?? null" @update:model-value="update(field.key, $event)" />
-        </div>
-      </section>
-      <section class="form-section" aria-labelledby="assign-title">
-        <h2 id="assign-title">分配</h2>
-        <div class="form-field assignment-field">
-          <label for="assignee">指定开发</label>
-          <div class="select-control">
-            <select id="assignee" v-model="assigneeId" :disabled="developersLoading || (!developers.length && !assigneeId)"
-              :aria-invalid="!!problem.assignee_id" aria-describedby="assignee-hint assignee-error"
-              @change="delete problem.assignee_id; markDirty()">
-              <option :value="null">未指定</option>
-              <option v-if="assigneeId && !developers.some(person => person.id === assigneeId)" :value="assigneeId" disabled>
-                {{ issue?.assignee?.username ?? '所选开发' }}（不可用）
-              </option>
-              <option v-for="developer in developers" :key="developer.id" :value="developer.id">{{ developer.username }}</option>
-            </select>
+    <fieldset class="editor-inputs editor-layout" :disabled="!!busy">
+      <div class="editor-card issue-form-content">
+        <section class="form-section" aria-labelledby="basic-title">
+          <h2 id="basic-title">基本信息</h2>
+          <div class="form-grid basic-grid">
+            <fieldset class="type-field">
+              <legend>申请类型<span class="required" aria-hidden="true">*</span></legend>
+              <div class="choices" :aria-invalid="!!problem.type">
+                <label v-for="(label, value) in typeLabels" :key="value" class="choice">
+                  <input type="radio" name="type" :value="value" :checked="activeType === value"
+                    aria-required="true" :aria-describedby="problem.type ? 'type-error' : undefined"
+                    @change="update('type', value)">{{ label }}
+                </label>
+              </div>
+              <p v-if="problem.type" id="type-error" class="field-error">{{ problem.type }}</p>
+            </fieldset>
+            <IssueField v-for="field in commonFields" :key="field.key" :field="field" :error="problem[field.key]"
+              :model-value="form[field.key] ?? null" @update:model-value="update(field.key, $event)" />
           </div>
-          <p id="assignee-hint" class="file-hint">
-            {{ developersLoading ? '正在加载开发账号…' : !developers.length && !developersError ? '暂无可指派的开发，提交后进入待领取。' : '留空时，提交后进入待领取。' }}
-          </p>
-          <p v-if="developersError" class="field-error" role="alert">{{ developersError }}</p>
-          <button v-if="developersError" class="admin-button" type="button" @click="loadDevelopers">重新加载</button>
-          <p id="assignee-error" class="field-error" role="alert">{{ problem.assignee_id }}</p>
-        </div>
-      </section>
-      <section v-if="activeType" :key="activeType" class="form-section" :class="{ 'type-changed': typeChanged }"
-        aria-labelledby="specific-title">
-        <h2 id="specific-title">{{ activeType === 'bug' ? '复现信息' : '需求信息' }}</h2>
-        <div class="form-grid">
-          <IssueField v-for="field in specificFields" :key="field.key" :field="field" :error="problem[field.key]"
-            :model-value="form[field.key] ?? null" @update:model-value="update(field.key, $event)" />
-        </div>
-      </section>
-      <section class="form-section" aria-labelledby="attachments-title">
-        <h2 id="attachments-title">附件</h2>
-        <div class="file-control">
-          <button class="admin-button attach-button" type="button" aria-describedby="file-hint"
-            @click="fileInput?.click()">添加附件</button>
-          <p id="file-hint" class="file-hint">PNG、JPG、TXT、LOG、PDF，每条最多 5 个，每个 10 MB</p>
-          <input ref="fileInput" type="file" accept=".png,.jpg,.jpeg,.txt,.log,.pdf" multiple hidden @change="addFiles">
-        </div>
-        <p v-if="fileError" class="field-error file-error" role="alert">{{ fileError }}</p>
-        <ul v-if="attachments.length" class="file-list">
-          <li v-for="(file, index) in attachments" :key="index">
-            <div class="file-name">
-              <button class="file-download" type="button" @click="download(file)">{{ file.name }}</button>
-              <span class="file-size">{{ fileSize(file.size) }}</span>
+        </section>
+        <section v-if="activeType" :key="activeType" class="form-section"
+          :class="{ 'type-changed': typeChanged, 'bug-fields': activeType === 'bug' }" aria-labelledby="specific-title">
+          <h2 id="specific-title">{{ activeType === 'bug' ? '复现信息' : '需求信息' }}</h2>
+          <div class="form-grid">
+            <IssueField v-for="field in specificFields" :key="field.key" :field="field" :error="problem[field.key]"
+              :model-value="form[field.key] ?? null" @update:model-value="update(field.key, $event)" />
+          </div>
+        </section>
+      </div>
+      <div class="editor-card issue-form-support">
+        <section class="form-section" aria-labelledby="assign-title">
+          <h2 id="assign-title" ref="assignHeading" tabindex="-1">分配</h2>
+          <div class="form-field assignment-field">
+            <label for="assignee">指定开发</label>
+            <div class="select-control">
+              <select id="assignee" ref="assignee" v-model="assigneeId" :disabled="developersLoading || (!developers.length && !assigneeId)"
+                :aria-invalid="!!problem.assignee_id"
+                :aria-describedby="developersError && !developersLoading ? 'assignee-error candidate-error' : 'assignee-hint assignee-error'"
+                @change="changeAssignee">
+                <option :value="null">未指定</option>
+                <option v-if="assigneeId && !developers.some(person => person.id === assigneeId)" :value="assigneeId" disabled>
+                  {{ assigneeName ?? '所选开发' }}（不可用）
+                </option>
+                <option v-for="developer in developers" :key="developer.id" :value="developer.id">{{ developer.username }}</option>
+              </select>
             </div>
-            <button class="account-edit" type="button" :aria-label="`移除 ${file.name}`" @click="removeFile(index)">移除</button>
-          </li>
-        </ul>
-      </section>
+            <p v-if="!developersError || developersLoading" id="assignee-hint" class="file-hint">
+              {{ developersLoading ? '正在加载开发账号…' : !developers.length && !developersError ? '暂无可指派的开发，提交后进入待领取。' : '留空时，提交后进入待领取。' }}
+            </p>
+            <p v-if="developersError" id="candidate-error" class="field-error" role="alert">{{ developersError }}</p>
+            <button v-if="developersError" class="admin-button retry-candidates" type="button"
+              :aria-disabled="developersLoading || undefined" @click="retryDevelopers">
+              {{ developersLoading ? '加载中…' : '重新加载' }}
+            </button>
+            <p id="assignee-error" class="field-error" role="alert">{{ problem.assignee_id }}</p>
+          </div>
+        </section>
+        <section class="form-section" aria-labelledby="attachments-title">
+          <h2 id="attachments-title">附件</h2>
+          <div class="file-control">
+            <button class="admin-button attach-button" type="button" aria-describedby="file-hint"
+              @click="fileInput?.click()"><IssueIcon name="plus" />添加附件</button>
+            <p id="file-hint" class="file-hint">PNG、JPG、TXT、LOG、PDF，每条最多 5 个，每个 10&nbsp;MB</p>
+            <input ref="fileInput" type="file" accept=".png,.jpg,.jpeg,.txt,.log,.pdf" multiple hidden @change="addFiles">
+          </div>
+          <p v-if="fileError" class="field-error file-error" role="alert">{{ fileError }}</p>
+          <ul v-if="attachments.length" class="file-list">
+            <li v-for="(file, index) in attachments" :key="index">
+              <div class="file-name">
+                <button class="file-download" type="button" @click="download(file)">
+                  <IssueIcon name="down" /><span>{{ file.name }}</span>
+                </button>
+                <span class="file-size">{{ fileSize(file.size) }}</span>
+              </div>
+              <button class="account-edit" type="button" :aria-label="`移除 ${file.name}`" @click="removeFile(index)">移除</button>
+            </li>
+          </ul>
+        </section>
+      </div>
     </fieldset>
     <div class="form-actions">
       <p v-if="actionError" class="action-error" role="alert">{{ actionError }}</p>
       <div class="action-buttons">
-        <button v-if="issue" type="button" class="admin-button delete-draft" :disabled="!!busy" @click="removeDraft">
+        <button v-if="issue" type="button" class="admin-button delete-draft" :aria-disabled="!!busy || undefined" @click="removeDraft">
           {{ busy === '删除' ? '删除中…' : '删除草稿' }}
         </button>
-        <button type="button" class="admin-button" :disabled="!!busy" @click="save(false, $event)">
+        <button type="button" class="admin-button" :aria-disabled="!!busy || undefined" @click="save(false, $event)">
           {{ busy === '保存' ? '保存中…' : '保存草稿' }}
         </button>
-        <button type="submit" class="admin-primary" :disabled="!!busy">{{ busy === '提交' ? '提交中…' : '提交事项' }}</button>
+        <button type="submit" class="admin-primary" :aria-disabled="!!busy || undefined">{{ busy === '提交' ? '提交中…' : '提交事项' }}</button>
       </div>
     </div>
   </form>

@@ -28,7 +28,9 @@ const message = ref('')
 const notice = ref('')
 const pageHeading = ref<HTMLElement | null>(null)
 const dialog = ref<HTMLDialogElement | null>(null)
-const roleField = ref<HTMLFieldSetElement | null>(null)
+const roleSelect = ref<HTMLSelectElement | null>(null)
+const listPanel = ref<HTMLElement | null>(null)
+const retryButton = ref<HTMLButtonElement | null>(null)
 const cancelButton = ref<HTMLButtonElement | null>(null)
 const saveButton = ref<HTMLButtonElement | null>(null)
 const editing = ref<ManagedAccount | null>(null)
@@ -74,11 +76,10 @@ async function handleAccessError(error: unknown): Promise<boolean> {
   return false
 }
 
-async function loadPage(requestedPage: number) {
+async function loadPage(requestedPage: number, focusResult = false) {
   if (loading.value) return
   retryPage.value = requestedPage
   loading.value = true
-  message.value = ''
   notice.value = ''
   savedAccountId.value = undefined
   try {
@@ -90,11 +91,18 @@ async function loadPage(requestedPage: number) {
     page.value = requestedPage
     hasNext.value = result.has_next
     loaded.value = true
+    message.value = ''
   } catch (error) {
     if (!await handleAccessError(error)) message.value = errorMessage(error)
   } finally {
     loading.value = false
   }
+  if (!focusResult || denied.value) return
+  await nextTick()
+  const target = message.value
+    ? retryButton.value
+    : listPanel.value?.querySelector<HTMLElement>('tbody tr') ?? pageHeading.value
+  target?.focus()
 }
 
 async function openEditor(account: ManagedAccount, event: MouseEvent) {
@@ -114,22 +122,24 @@ async function openEditor(account: ManagedAccount, event: MouseEvent) {
 }
 
 function focusRole() {
-  const input = roleField.value?.querySelector<HTMLInputElement>(':checked')
-    ?? roleField.value?.querySelector<HTMLInputElement>('input')
-  input?.focus()
+  roleSelect.value?.focus()
 }
 
 function closeEditor() {
+  const row = listPanel.value?.querySelector<HTMLElement>(`[data-account-id="${editing.value?.id}"]`)
   editing.value = null
   if (editTrigger?.isConnected) editTrigger.focus({ preventScroll: true })
-  else pageHeading.value?.focus({ preventScroll: true })
+  else (row ?? pageHeading.value)?.focus({ preventScroll: true })
   editTrigger = null
 }
 
 function showNotice(message: string) {
   window.clearTimeout(noticeTimer)
   notice.value = message
-  noticeTimer = window.setTimeout(() => { notice.value = '' }, 5200)
+  noticeTimer = window.setTimeout(() => {
+    notice.value = ''
+    savedAccountId.value = undefined
+  }, 5200)
 }
 
 watch([selectedRole, selectedStatus], () => {
@@ -183,6 +193,7 @@ async function saveAccount() {
       focusRole()
     } else {
       editMessage.value = errorMessage(error)
+      await nextTick()
       saveButton.value?.focus({ preventScroll: true })
     }
   } finally {
@@ -195,7 +206,7 @@ onBeforeUnmount(() => window.clearTimeout(noticeTimer))
 </script>
 
 <template>
-  <AccountWorkspace :user="viewer">
+  <AccountWorkspace :user="viewer" class="account-area">
     <section aria-labelledby="admin-heading">
       <header class="admin-page-head">
         <h1 id="admin-heading" ref="pageHeading" tabindex="-1">{{ denied ? '无法访问' : title }}</h1>
@@ -204,14 +215,15 @@ onBeforeUnmount(() => window.clearTimeout(noticeTimer))
       <div v-if="message" class="admin-feedback">
         <p role="alert">{{ message }}</p>
         <RouterLink v-if="denied" to="/account">返回我的账号</RouterLink>
-        <button v-else class="admin-button" type="button" :disabled="loading" @click="loadPage(retryPage)">重新加载</button>
+        <button v-else ref="retryButton" class="admin-button" type="button" :aria-disabled="loading || undefined"
+          @click="loadPage(retryPage, true)">{{ loading ? '加载中…' : '重新加载' }}</button>
       </div>
       <p v-else-if="loading && !loaded" class="admin-feedback" role="status">正在加载账号…</p>
       <div class="toast-region" role="status" aria-atomic="true">
         <p v-if="notice" class="toast">{{ notice }}</p>
       </div>
 
-      <div v-if="loaded && !denied" :aria-busy="loading">
+      <div v-if="loaded && !denied" ref="listPanel" class="accounts-panel" :aria-busy="loading">
         <table
           v-if="accounts.length" class="accounts-table" :class="{ 'is-authorization': authorization }"
           aria-labelledby="admin-heading" role="table"
@@ -227,13 +239,16 @@ onBeforeUnmount(() => window.clearTimeout(noticeTimer))
           </thead>
           <tbody role="rowgroup">
             <tr
-              v-for="account in accounts" :key="account.id" role="row"
+              v-for="account in accounts" :key="account.id" role="row" tabindex="-1" :data-account-id="account.id"
               :class="{ 'just-saved': account.id === savedAccountId }"
             >
               <th scope="row" role="rowheader">
-                <span class="account-copy">
-                  <strong class="account-name">{{ account.username }}</strong>
-                  <span class="account-email">{{ account.email }}</span>
+                <span class="person">
+                  <span class="avatar" aria-hidden="true">{{ [...account.username][0] }}</span>
+                  <span class="account-copy">
+                    <strong class="account-name">{{ account.username }}</strong>
+                    <span class="account-email">{{ account.email }}</span>
+                  </span>
                 </span>
               </th>
               <td class="role-cell" role="cell">
@@ -249,15 +264,20 @@ onBeforeUnmount(() => window.clearTimeout(noticeTimer))
                   @click="openEditor(account, $event)"
                 >{{ authorization ? '授予管理员' : '编辑' }}</button>
                 <span v-else-if="authorization" class="grant-complete">已授予</span>
+                <span v-else class="grant-complete" aria-label="不可编辑">—</span>
               </td>
             </tr>
           </tbody>
         </table>
         <p v-else class="admin-feedback">暂无账号</p>
         <nav v-if="page > 1 || hasNext" class="accounts-pagination" aria-label="账号分页">
-          <button type="button" class="admin-button" :disabled="page === 1 || loading" @click="loadPage(page - 1)">上一页</button>
           <span aria-live="polite">第 {{ page }} 页</span>
-          <button type="button" class="admin-button" :disabled="!hasNext || loading" @click="loadPage(page + 1)">下一页</button>
+          <div class="page-actions">
+            <button type="button" class="admin-button" :disabled="page === 1" :aria-disabled="loading || undefined"
+              @click="loadPage(page - 1, true)">上一页</button>
+            <button type="button" class="admin-button" :disabled="!hasNext" :aria-disabled="loading || undefined"
+              @click="loadPage(page + 1, true)">下一页</button>
+          </div>
         </nav>
       </div>
 
@@ -280,49 +300,40 @@ onBeforeUnmount(() => window.clearTimeout(noticeTimer))
               <p v-if="editing.role" class="editor-warning">原有角色将替换为管理员。</p>
             </div>
             <div v-else class="editor-fields">
-              <fieldset
-                ref="roleField" class="field" aria-labelledby="account-role-label" :disabled="saving"
-                :aria-invalid="roleError || undefined" :aria-describedby="roleError ? 'account-role-error' : undefined"
-              >
-                <legend>
-                  <span id="account-role-label">角色</span>
-                  <span v-if="roleError" id="account-role-error" class="role-error" role="alert">请选择测试或开发角色。</span>
-                </legend>
-                <div class="choices">
-                  <label v-for="role in memberRoles" :key="role" class="choice">
-                    <input v-model="selectedRole" type="radio" name="account-role" :value="role">
-                    <span>{{ roleLabels[role] }}</span>
-                  </label>
+              <div class="account-field">
+                <label for="account-role">角色</label>
+                <div class="select-control">
+                  <select id="account-role" ref="roleSelect" v-model="selectedRole" :disabled="saving"
+                    :aria-invalid="roleError || undefined" :aria-describedby="roleError ? 'account-role-error' : undefined">
+                    <option v-if="!editing.role" value="">未分配</option>
+                    <option v-for="role in memberRoles" :key="role" :value="role">{{ roleLabels[role] }}</option>
+                  </select>
                 </div>
-              </fieldset>
-              <fieldset
-                class="field" :disabled="saving"
-                :aria-describedby="willStopActiveAccount && !editMessage ? 'account-stop-warning' : undefined"
-              >
-                <legend>状态</legend>
-                <div class="choices">
-                  <label v-for="status in statusOptions" :key="status" class="choice">
-                    <input v-model="selectedStatus" type="radio" name="account-status" :value="status">
-                    <span>{{ statusLabels[status] }}</span>
-                  </label>
+                <p v-if="roleError" id="account-role-error" class="editor-error" role="alert">请选择测试或开发角色。</p>
+              </div>
+              <div class="account-field">
+                <label for="account-status">状态</label>
+                <div class="select-control">
+                  <select id="account-status" v-model="selectedStatus" :disabled="saving"
+                    :aria-describedby="willStopActiveAccount ? 'account-stop-warning' : undefined">
+                    <option v-for="status in statusOptions" :key="status" :value="status">{{ statusLabels[status] }}</option>
+                  </select>
                 </div>
-              </fieldset>
-            </div>
-            <div class="editor-context">
-              <p v-if="willStopActiveAccount && !authorization && !editMessage" id="account-stop-warning" class="editor-notice editor-warning">
-                停用后，该账号在所有设备上的会话都会失效。
-              </p>
-              <p v-if="editMessage" class="editor-notice editor-error" role="alert">{{ editMessage }}</p>
+                <p v-if="willStopActiveAccount" id="account-stop-warning" class="editor-notice editor-warning">
+                  停用后，该账号在所有设备上的会话都会失效。
+                </p>
+              </div>
             </div>
           </div>
           <div class="editor-actions">
-            <button ref="cancelButton" class="admin-button" type="button" :disabled="saving" @click="dialog?.close()">取消</button>
-            <button
-              ref="saveButton" class="admin-primary" type="submit" :disabled="!hasChanges"
-              :aria-disabled="saving || undefined" :data-busy="saving || undefined"
-            >
-              {{ authorization ? (saving ? '正在授予…' : '确认授予') : (saving ? '保存中…' : '保存更改') }}
-            </button>
+            <p v-if="editMessage" class="account-action-error" role="alert">{{ editMessage }}</p>
+            <div class="editor-buttons">
+              <button ref="cancelButton" class="admin-button" type="button" :disabled="saving" @click="dialog?.close()">取消</button>
+              <button ref="saveButton" class="admin-primary" type="submit" :disabled="!hasChanges"
+                :aria-disabled="saving || undefined" :data-busy="saving || undefined">
+                {{ authorization ? (saving ? '授予中…' : '确认授予') : (saving ? '保存中…' : '保存更改') }}
+              </button>
+            </div>
           </div>
         </form>
       </dialog>

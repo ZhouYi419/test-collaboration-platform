@@ -1,0 +1,109 @@
+.core-design .auth { display: block; }
+.auth-top {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  padding-inline: max(var(--gutter), calc((100% - var(--content)) / 2));
+  background: var(--surface);
+  border-bottom: 1px solid #e9e7ef;
+}
+.core-design .auth-main { width: min(calc(100% - 2 * var(--gutter)), 440px); margin: 0 auto; padding: clamp(28px, 8vh, 76px) 0 32px; }
+.core-design .auth-card { border-radius: 13px; padding: 30px 32px 32px; box-shadow: 0 1px 2px #20153908; }
+.core-design .auth-header { margin-bottom: 25px; align-items: baseline; }
+.core-design .auth-header a { padding-block: 5px; }
+.core-design .auth-card .form-field + .form-field { margin-top: 15px; }
+.core-design .auth-card .form-field input { min-height: 44px; }
+.core-design .password-row .admin-button { padding-inline: 7px; min-height: 44px; color: var(--accent); }
+.core-design .password-row .admin-button[aria-pressed="true"] { background: var(--tint); border-color: #dcd4e9; }
+.core-design .auth-card .admin-primary { margin-top: 21px; min-height: 44px; }
+.core-design .auth-card .success-icon { margin-bottom: 16px; }
+.core-design .auth-card .success-copy { margin-top: 9px; }
+
+.account-profile { max-width: 650px; }
+.profile-body { padding: 24px; }
+.account-profile .account-person { margin: 0; gap: 12px; font-size: 18px; line-height: 1.35; }
+.core-design .account-person .avatar { width: 33px; height: 33px; background: #ede8f6; color: #483476; border-radius: 50%; }
+.core-design .account-profile .avatar { width: 44px; height: 44px; }
+.profile-meta { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .42fr); gap: 12px 20px; }
+.profile-meta dt { color: var(--muted); font-size: 12.5px; }
+.profile-meta dd { margin-top: 5px; font-weight: 600; overflow-wrap: anywhere; }
+.profile-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); }
+.profile-actions .admin-button { margin: 0; flex: none; }
+.profile-actions .field-error { margin-inline-end: auto; }
+
+.core-design .account-table thead { background: #faf9fc; }
+.core-design .account-table th, .core-design .account-table td { padding: 11px 15px; }
+.core-design .account-table :is(th, td):first-child { padding-left: 20px; }
+.core-design .account-table :is(th, td):last-child { padding-right: 16px; }
+.core-design .account-table col:nth-child(2) { width: 132px; }
+.core-design .account-table col:nth-child(3) { width: 136px; }
+.core-design .account-table col:nth-child(4) { width: 154px; }
+.core-design .account-table tbody tr { height: 60px; }
+.core-design .account-table tbody tr:is(:hover, :focus-within) { background: #faf8ff; }
+.core-design .account-table tbody tr:focus-visible { outline-offset: -3px; }
+.core-design .account-table tbody tr.row-updated { animation: row-receipt 650ms ease-out; }
+.core-design .account-table .account-person { gap: 10px; }
+.core-design .account-table .issue-state[data-status="enabled"] { background: transparent; color: var(--muted); padding-inline: 0; font-weight: 500; }
+.core-design .account-table .issue-state[data-status="enabled"]::before { content: none; }
+.core-design .account-table .granted { color: var(--muted); font-size: 12.5px; padding-inline-end: 8px; }
+.account-receipt { color: #296047; font-size: 12px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.core-design .account-table .account-edit { min-width: 0; white-space: nowrap; }
+.core-design .pagination { justify-content: space-between; padding-inline: 20px 16px; }
+.page-actions { display: flex; gap: 6px; }
+.core-design .page-count { font-variant-numeric: tabular-nums; }
+
+.core-design dialog { border-radius: 13px; box-shadow: 0 16px 48px #20153935; }
+.core-design dialog::backdrop { background: #25223868; }
+.core-design .dialog-actions { background: #faf9fc; }
+.core-design .dialog-body .account-person { background: #f6f3fa; }
+#account-dialog > form { display: flex; flex-direction: column; max-height: inherit; }
+#account-dialog .dialog-body { overflow-y: auto; }
+#account-dialog .dialog-actions { flex: none; flex-direction: column; align-items: stretch; gap: 8px; }
+.dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.core-design #account-dialog .dialog-actions .field-error { padding: 9px 11px; border-radius: 8px; background: #fbf0f3; }
+.core-design .account-field select { border-color: #d7d2e0; }
+.core-design .account-field select:focus { outline: 2px solid #ddd2ee; border-color: var(--focus); }
+.core-design .account-field select[aria-invalid="true"] { border-color: #b45c70; }
+.core-design .issue-empty { padding-block: 44px; }
+.core-design .empty-icon { background: var(--tint); color: var(--accent); }
+
+@media (max-width: 960px) {
+  .core-design .account-table col:nth-child(2) { width: 106px; }
+  .core-design .account-table col:nth-child(3) { width: 108px; }
+  .core-design .account-table col:nth-child(4) { width: 128px; }
+}
+@media (max-width: 760px) {
+  .auth-top { min-height: 63px; }
+  .core-design .auth-main { padding-top: 24px; }
+  .core-design .auth-card { padding: 20px 17px; }
+  .core-design .auth-header { margin-bottom: 17px; }
+  .core-design .auth-header a { min-height: 44px; display: inline-flex; align-items: center; }
+  .core-design .auth-card .form-field + .form-field { margin-top: 12px; }
+  .profile-body { padding: 16px; }
+  .profile-meta { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 16px; }
+  .profile-actions { padding-inline: 13px; }
+  .core-design .account-table tbody tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(44px, auto);
+    gap: 2px 8px;
+    padding: 12px 11px 5px;
+    height: auto;
+  }
+  .core-design .account-table tbody tr > :is(th, td),
+  .core-design .account-table tbody tr > :is(th, td):is(:first-child, :last-child) { padding: 0; }
+  .core-design .account-table tbody tr > th { margin-bottom: 3px; }
+  .core-design .account-table tbody tr > td { font-size: 12.5px; }
+  .core-design .account-table .account-edit { padding-inline: 8px; }
+  .core-design .account-table .account-email { font-size: 12px; }
+  .core-design .pagination { padding-inline: 10px; gap: 5px; }
+  .core-design .pagination button { padding-inline: 8px; font-size: 12.5px; }
+  .core-design dialog { border-radius: 14px 14px 0 0; border-bottom: 0; }
+  .core-design .dialog-actions { padding: 10px 14px max(10px, env(safe-area-inset-bottom)); }
+  .core-design .dialog-body { padding: 17px 14px; }
+  .core-design .account-field select { font-size: 16px; min-height: 44px; }
+  .core-design .issue-empty { padding-block: 33px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .core-design .account-table tbody tr.row-updated { background: #f1edf8; }
+}

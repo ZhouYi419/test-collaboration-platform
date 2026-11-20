@@ -44,6 +44,8 @@ const accountMessage = ref(false)
 const pending = ref(false)
 const registered = ref(false)
 const title = ref<HTMLElement | null>(null)
+const submitButton = ref<HTMLButtonElement | null>(null)
+const feedback = ref<HTMLElement | null>(null)
 let mounted = true
 onBeforeUnmount(() => { mounted = false })
 
@@ -99,6 +101,7 @@ async function submit() {
         form.confirm_password = ''
         registered.value = true
         await nextTick()
+        window.scrollTo(0, 0)
         title.value?.focus({ preventScroll: true })
       })
     } else {
@@ -117,6 +120,13 @@ async function submit() {
       message.value = errorMessage(error)
       accountMessage.value = error instanceof ApiError
         && (error.code === 'account_inactive' || error.code === 'account_disabled')
+      await nextTick()
+      if (error instanceof ApiError && error.code === 'invalid_credentials') {
+        document.getElementById('password')?.focus()
+      } else {
+        submitButton.value?.focus({ preventScroll: true })
+      }
+      feedback.value?.scrollIntoView({ block: 'nearest' })
     }
     await focusFirstError()
   } finally {
@@ -126,7 +136,7 @@ async function submit() {
 </script>
 
 <template>
-  <section v-if="registered" class="auth-confirm" aria-labelledby="auth-title">
+  <section v-if="registered" class="auth-card auth-confirm" aria-labelledby="auth-title">
     <span class="confirm-mark" aria-hidden="true"></span>
     <h1 id="auth-title" ref="title" tabindex="-1">注册成功</h1>
     <p>请等待管理员启用账号。</p>
@@ -134,7 +144,7 @@ async function submit() {
       返回登录
     </RouterLink>
   </section>
-  <section v-else aria-labelledby="auth-title">
+  <section v-else class="auth-card" aria-labelledby="auth-title">
     <div class="auth-panel-header">
       <h1 id="auth-title" tabindex="-1">{{ registering ? '创建账号' : '登录' }}</h1>
       <RouterLink class="auth-switch" :to="registering ? '/login' : '/register'">
@@ -148,10 +158,10 @@ async function submit() {
           :error="errors[field.name]" :busy="pending" @update:model-value="clearError(field.name)"
         />
       </div>
-      <button class="auth-primary" type="submit" :aria-disabled="pending || undefined" :data-busy="pending || undefined">
+      <button ref="submitButton" class="auth-primary" type="submit" :aria-disabled="pending || undefined" :data-busy="pending || undefined">
         {{ pending ? (registering ? '注册中…' : '登录中…') : (registering ? '注册' : '登录') }}
       </button>
-      <p class="form-feedback" :data-kind="accountMessage ? 'account' : undefined" role="alert">{{ message }}</p>
+      <p ref="feedback" class="form-feedback" :data-kind="accountMessage ? 'account' : undefined" role="alert">{{ message }}</p>
     </form>
   </section>
 </template>

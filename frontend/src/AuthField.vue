@@ -15,7 +15,7 @@ const showPassword = ref(false)
 </script>
 
 <template>
-  <div class="auth-field" :class="{ 'has-error': error }">
+  <div class="auth-field">
     <div class="field-caption">
       <label :for="name">{{ label }}</label>
       <span v-if="hint && !error" :id="`${name}-hint`" class="field-hint">{{ hint }}</span>
@@ -29,6 +29,7 @@ const showPassword = ref(false)
       >
       <button
         v-if="type === 'password'" class="reveal" type="button" :disabled="busy"
+        :aria-pressed="showPassword"
         :aria-controls="name" :aria-label="`${showPassword ? '隐藏' : '显示'}${label}`"
         @click="showPassword = !showPassword"
       >{{ showPassword ? '隐藏' : '显示' }}</button>

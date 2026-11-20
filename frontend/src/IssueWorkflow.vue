@@ -11,6 +11,7 @@ const fieldError = ref('')
 const busy = ref(false)
 const panel = ref<HTMLElement>()
 const input = ref<HTMLTextAreaElement>()
+const actionButton = ref<HTMLButtonElement>()
 const dialog = ref<HTMLDialogElement>()
 const leavePrompt = ref(false)
 let confirmResult: ((accepted: boolean) => void) | undefined
@@ -19,6 +20,7 @@ const action = computed<WorkflowAction>(() => ({
   pending_claim: 'claim', pending_work: 'start', in_progress: 'finish',
 } as const)[props.issue.status as 'pending_claim' | 'pending_work' | 'in_progress'])
 const buttonText = computed(() => ({ claim: '领取事项', start: '开始处理', finish: '提交处理结果' })[action.value])
+const busyText = computed(() => ({ claim: '领取中…', start: '更新中…', finish: '提交中…' })[action.value])
 
 function confirm(leaving: boolean) {
   if (confirmResult) return Promise.resolve(false)
@@ -43,9 +45,16 @@ async function confirmLeave() {
 
 function focusInput() {
   input.value?.focus({ preventScroll: true })
-  input.value?.scrollIntoView({ block: 'center' })
+  panel.value?.scrollIntoView({ block: 'nearest' })
+  input.value?.scrollIntoView({ block: 'nearest' })
 }
-defineExpose({ confirmLeave, focusInput })
+
+function focusAction() {
+  actionButton.value?.focus({ preventScroll: true })
+  panel.value?.scrollIntoView({ block: 'nearest' })
+  actionButton.value?.scrollIntoView({ block: 'nearest' })
+}
+defineExpose({ confirmLeave, focusInput, focusAction })
 
 function beforeUnload(event: BeforeUnloadEvent) {
   if (feedback.value || busy.value) event.preventDefault()
@@ -97,15 +106,14 @@ async function submit() {
     }
     error.value = errorMessage(cause)
     await nextTick()
-    const button = panel.value?.querySelector<HTMLElement>('.admin-primary')
-    button?.focus({ preventScroll: true })
-    if (operation === 'finish') button?.scrollIntoView({ block: 'nearest' })
+    focusAction()
   }
 }
 </script>
 
 <template>
-  <form :id="action === 'finish' ? 'process-form' : undefined" ref="panel" :class="{ 'workflow-actions': action !== 'finish' }" novalidate
+  <form :id="action === 'finish' ? 'process-form' : undefined" ref="panel" class="workflow-panel"
+    :class="{ 'workflow-actions': action !== 'finish' }" novalidate
     @submit.prevent="submit">
     <section v-if="action === 'finish'" class="detail-section workflow-feedback">
       <h2>处理反馈</h2>
@@ -120,8 +128,10 @@ async function submit() {
     <div class="form-actions">
       <p v-if="error" class="action-error" role="alert">{{ error }}</p>
       <div class="action-buttons">
-        <button class="admin-primary" type="submit" :disabled="busy">
-          {{ busy ? (action === 'claim' ? '领取中…' : action === 'start' ? '更新中…' : '提交中…') : buttonText }}
+        <button ref="actionButton" class="admin-primary workflow-submit" type="submit"
+          :aria-disabled="busy || undefined">
+          <span :class="{ 'inactive-label': busy }" :aria-hidden="busy">{{ buttonText }}</span>
+          <span :class="{ 'inactive-label': !busy }" :aria-hidden="!busy">{{ busyText }}</span>
         </button>
       </div>
     </div>

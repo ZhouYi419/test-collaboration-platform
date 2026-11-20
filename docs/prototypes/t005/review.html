@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T005.1 全套原型</title>
+  <link rel="stylesheet" href="prototype.css">
+  <link rel="stylesheet" href="core.css">
+  <link rel="stylesheet" href="accounts.css">
+  <style>
+    main { width: min(calc(100% - 2 * var(--gutter)), var(--content)); margin: 0 auto; padding: clamp(25px, 5vw, 50px) 0; }
+    main > p { margin: 9px 0 22px; color: var(--muted); line-height: 1.6; }
+    .review-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; align-items: start; }
+    .review-grid ul, details ul { list-style: none; padding: 0; display: grid; }
+    .review-grid li + li { border-top: 1px solid #eeedf2; }
+    .review-grid a, details li a { display: inline-flex; align-items: center; min-height: 39px; padding: 4px 2px; font-weight: 620; text-underline-offset: 3px; }
+    details { margin-top: 16px; }
+    details summary { min-height: 44px; align-content: center; font-weight: 680; cursor: pointer; }
+    details .scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 20px; margin-top: 5px; }
+    details h3 { margin: 0; font-size: 14px; }
+    @media (max-width: 760px) { .review-grid a, details li a { min-height: 44px; } }
+  </style>
+</head>
+<body class="core-design">
+  <div class="auth-top"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i></span><span>测试协作平台</span></div></div>
+  <main>
+    <h1>T005.1 全套原型</h1>
+    <p>各入口使用示例数据，刷新后重置。登录示例账号为「陈砚」，密码 <code>Demo1234</code>。</p>
+    <div class="review-grid">
+      <section class="section-card">
+        <h2>认证与账号</h2>
+        <ul>
+          <li><a href="index.html#login">登录</a></li>
+          <li><a href="index.html#register">创建账号</a></li>
+          <li><a href="index.html#registered">注册成功</a></li>
+          <li><a href="index.html#lin/account">我的账号</a></li>
+          <li><a href="index.html#member/account">未分配角色</a></li>
+        </ul>
+      </section>
+      <section class="section-card">
+        <h2>账号管理</h2>
+        <ul>
+          <li><a href="index.html#admin/accounts">账号管理与编辑</a></li>
+          <li><a href="index.html#operator/authorizations">管理员授权</a></li>
+          <li><a href="index.html?state=empty#admin/accounts">空目录</a></li>
+        </ul>
+      </section>
+      <section class="section-card">
+        <h2>测试事项</h2>
+        <ul>
+          <li><a href="index.html#lin/items">我的事项</a></li>
+          <li><a href="index.html#lin/new">新建 Bug 或需求</a></li>
+          <li><a href="index.html#lin/items/draft">编辑 Bug 草稿</a></li>
+          <li><a href="index.html#lin/items/blank">编辑空草稿</a></li>
+          <li><a href="index.html#lin/items/verified">查看处理反馈</a></li>
+        </ul>
+      </section>
+      <section class="section-card">
+        <h2>开发处理</h2>
+        <ul>
+          <li><a href="index.html#chen/inbox">待领取队列</a></li>
+          <li><a href="index.html#chen/assigned">我的待办</a></li>
+          <li><a href="index.html#chen/feedback">已反馈</a></li>
+          <li><a href="index.html#chen/inbox/export">待领取详情</a></li>
+          <li><a href="index.html#chen/assigned/assigned">待处理详情</a></li>
+          <li><a href="index.html#chen/assigned/working">处理中详情</a></li>
+          <li><a href="index.html#chen/feedback/verified">已反馈详情</a></li>
+        </ul>
+      </section>
+    </div>
+    <details class="section-card">
+      <summary>异常与恢复场景</summary>
+      <div class="scenarios">
+        <div>
+          <h3>身份与权限</h3>
+          <ul>
+            <li><a href="index.html?state=auth-network#login">登录失败后重试</a></li>
+            <li><a href="index.html?state=logout-error#lin/account">退出失败后重试</a></li>
+            <li><a href="index.html?state=expired#lin/account">会话失效</a></li>
+            <li><a href="index.html#admin/authorizations">无权访问管理员授权</a></li>
+            <li><a href="index.html#he/assigned/assigned">事项不可用</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>编辑与回复</h3>
+          <ul>
+            <li><a href="index.html?state=account-write-error#admin/accounts">账号保存失败</a></li>
+            <li><a href="index.html?state=grant-error#operator/authorizations">授权失败</a></li>
+            <li><a href="index.html?state=write-error#lin/items/draft">草稿写入失败</a></li>
+            <li><a href="index.html?state=write-error#chen/assigned/working">处理反馈失败</a></li>
+            <li><a href="index.html?state=race#chen/inbox/export">领取冲突</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>数据状态</h3>
+          <ul>
+            <li><a href="index.html?state=loading#chen/inbox">加载中</a></li>
+            <li><a href="index.html?state=empty#chen/inbox">空队列</a></li>
+            <li><a href="index.html?state=list-error#lin/items">事项加载失败</a></li>
+            <li><a href="index.html?state=assignee-revoked#lin/items/draft">开发候选失效</a></li>
+            <li><a href="index.html?state=candidate-error#lin/new">候选加载失败</a></li>
+            <li><a href="index.html?state=no-developers#lin/new">暂无可选开发</a></li>
+            <li><a href="index.html?state=download-error#chen/inbox/export">附件下载失败</a></li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </main>
+</body>
+</html>

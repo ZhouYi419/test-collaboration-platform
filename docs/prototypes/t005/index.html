@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>测试协作平台</title>
+  <link rel="stylesheet" href="prototype.css">
+  <link rel="stylesheet" href="core.css">
+  <link rel="stylesheet" href="accounts.css">
+  <script src="accounts.js" defer></script>
+  <script src="issues.js" defer></script>
+</head>
+<body>
+  <div class="account-workspace" id="workspace">
+    <aside class="account-sidebar">
+      <a class="brand" id="brand" href="#chen/inbox"><span class="brand-mark" aria-hidden="true"><i></i></span><span>测试协作平台</span></a>
+      <nav id="nav" class="workspace-nav" aria-label="工作区"></nav>
+      <div id="identity" class="identity"></div>
+    </aside>
+    <div class="workspace-main">
+      <header class="workspace-bar" id="context"></header>
+      <main class="workspace-content" id="view"></main>
+    </div>
+  </div>
+  <main id="auth" class="auth" hidden></main>
+  <div class="issue-notice" id="notice" role="status"></div>
+  <div class="visually-hidden" id="account-announcement" role="status"></div>
+  <dialog id="confirm" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <div class="dialog-body"><h2 id="confirm-title"></h2><p id="confirm-message"></p></div>
+      <div class="dialog-actions">
+        <button class="admin-button" value="cancel" autofocus>取消</button>
+        <button class="admin-primary" id="confirm-action" value="confirm"></button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="account-dialog" aria-labelledby="account-dialog-title"></dialog>
+</body>
+</html>

@@ -1,0 +1,104 @@
+.issue-reading {
+  .form-head { min-height: 0; align-items: baseline; }
+  .type-field legend { margin-bottom: 6px; }
+  .type-field legend, .form-field label { line-height: 1.45; }
+  .editor-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, clamp(278px, 30%, 350px));
+    align-items: start;
+    gap: 16px 20px;
+  }
+  .editor-card, .form-actions {
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    box-shadow: 0 1px 2px #20153908;
+  }
+  .form-section { padding: 20px 24px; border-top: 0; }
+  .form-section + .form-section { border-top: 1px solid #eeedf2; }
+  .form-section h2 { margin-bottom: 14px; font-size: 16px; letter-spacing: -.012em; }
+  #assign-title:focus { outline: none; }
+  .form-grid { gap: 16px 15px; }
+  .form-field { gap: 6px; }
+  .form-field :is(input, select, textarea) { border-color: var(--control-line); border-radius: 8px; }
+  .form-field :is(input, select, textarea):hover:not(:disabled, [aria-invalid="true"]) { border-color: var(--control-hover); }
+  .form-field :is(input, select, textarea):focus { border-color: var(--focus); outline: 2px solid var(--control-ring); outline-offset: 0; }
+  .form-field input::placeholder { color: var(--muted); }
+  .form-field input[type="date"] { -webkit-tap-highlight-color: transparent; }
+  .form-field [aria-invalid="true"], .type-field [aria-invalid="true"] { border-color: var(--control-error); }
+  .form-field :is(input, select, textarea)[aria-invalid="true"]:focus { outline-color: var(--control-error-ring); }
+  .form-field select:disabled { color: var(--muted); background: #f4f2f7; }
+  .form-field input[type="date"] { min-width: 0; }
+  .retry-candidates { justify-self: start; }
+  .choices { min-height: 44px; background: #f1eef6; }
+  .type-field .choice { min-height: 36px; padding-inline: 7px; color: var(--muted); }
+  .choice input { inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; clip-path: none; cursor: pointer; }
+  .choice:has(input:enabled):hover { background: #ede8f5; }
+  .choice:has(input:checked), .choice:has(input:checked:enabled):hover {
+    background: #fff;
+    color: var(--accent-dark);
+    box-shadow: 0 1px 3px #24183a20;
+  }
+  .choice:has(input:disabled) { cursor: default; }
+  .type-field [aria-invalid="true"] { outline-color: var(--control-error); }
+
+  .file-control { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .attach-button { display: inline-flex; align-items: center; gap: 6px; }
+  .file-list li { align-items: start; gap: 6px; padding-block: 7px; }
+  .file-list .file-download { min-height: 36px; font-size: 13px; }
+  .file-list .file-size { padding-inline-start: 23px; }
+  .file-list .account-edit { min-height: 36px; padding-inline: 6px; }
+  .file-list .account-edit:hover { background: var(--rail); }
+
+  .form-actions {
+    inset-block-end: max(8px, env(safe-area-inset-bottom));
+    margin-top: 16px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 12px #20153911;
+  }
+  .action-buttons button { min-inline-size: 99px; }
+  .action-buttons .delete-draft { color: var(--error); }
+  .action-buttons [aria-disabled="true"] { cursor: default; }
+  .action-buttons .admin-button[aria-disabled="true"] { opacity: .65; background: var(--surface); }
+  .issue-confirm .danger-button:hover { background: #702b24; }
+}
+
+html:has(#issue-form) { scroll-padding-bottom: 94px; }
+
+@media (max-width: 960px) {
+  .issue-reading .form-section { padding-inline: 18px; }
+}
+
+@media (max-width: 800px) {
+  .issue-reading .editor-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+
+@media (max-width: 760px) {
+  .issue-reading {
+    .form-head { gap: 5px; }
+    .form-section { padding: 15px; }
+    .form-grid { gap: 13px 10px; }
+    .basic-grid { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
+    .bug-fields .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .bug-fields :is(.form-field:has(textarea), .form-field:has(#version_affected)) { grid-column: 1 / -1; }
+    .file-list .account-edit, .file-list .file-download { min-height: 44px; }
+    .form-actions { padding: 7px; }
+    .action-buttons { gap: 5px; }
+    .action-buttons button { flex: 1; min-inline-size: 0; padding-inline: 6px; }
+    .issue-confirm[open] { animation-name: issue-sheet-enter; }
+  }
+}
+
+@keyframes issue-sheet-enter { from { transform: translateY(16px); } }
+
+@media (max-width: 360px) {
+  .issue-reading .type-field .choice { padding-inline: 3px; font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .issue-reading {
+    .type-changed { animation: none; }
+    .type-field .choice { transition: none; }
+  }
+}
