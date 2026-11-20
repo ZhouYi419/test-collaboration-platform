@@ -101,7 +101,7 @@ async function submit() {
     :class="{ 'workflow-actions': action !== 'finish' }" novalidate
     @submit.prevent="submit">
     <section v-if="action === 'finish'" class="detail-section workflow-feedback">
-      <h2>处理反馈</h2>
+      <h2>{{ issue.latest_verification ? '重新提交反馈' : '处理反馈' }}</h2>
       <div class="form-field wide">
         <label for="feedback">处理说明<span class="required" aria-hidden="true">*</span></label>
         <textarea id="feedback" ref="input" v-model="feedback" maxlength="5000" :disabled="busy" aria-required="true"

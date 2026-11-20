@@ -1,7 +1,7 @@
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import JSON, BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, String, Text, Uuid
+from sqlalchemy import JSON, BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -51,18 +51,19 @@ class IssueStatus(StrEnum):
     PENDING_WORK = "pending_work"
     IN_PROGRESS = "in_progress"
     PENDING_VERIFY = "pending_verify"
+    CLOSED = "closed"
 
 
 class Issue(Base):
     __tablename__ = "issues"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'pending_claim', 'pending_work', 'in_progress', 'pending_verify')",
+            "status IN ('draft', 'pending_claim', 'pending_work', 'in_progress', 'pending_verify', 'closed')",
             name="ck_issues_status",
         ),
         CheckConstraint(
             "status = 'draft' OR (status = 'pending_claim' AND assignee_id IS NULL) "
-            "OR (status IN ('pending_work', 'in_progress', 'pending_verify') AND assignee_id IS NOT NULL)",
+            "OR (status IN ('pending_work', 'in_progress', 'pending_verify', 'closed') AND assignee_id IS NOT NULL)",
             name="ck_issues_assignment",
         ),
         Index("ix_issues_creator_updated", "creator_id", "updated_at", "id"),
@@ -84,6 +85,28 @@ class Issue(Base):
     details: Mapped[dict[str, str]] = mapped_column(JSON)
 
     __mapper_args__ = {"version_id_col": version}
+
+
+class IssueVerification(Base):
+    __tablename__ = "issue_verifications"
+    __table_args__ = (
+        CheckConstraint(
+            "(outcome = 'passed' AND reason IS NULL) OR "
+            "(outcome = 'returned' AND reason IS NOT NULL AND length(trim(reason)) BETWEEN 1 AND 5000)",
+            name="ck_issue_verifications_outcome",
+        ),
+        UniqueConstraint("issue_id", "write_id", name="uq_issue_verifications_write"),
+    )
+
+    issue_id: Mapped[UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True)
+    issue_version: Mapped[int] = mapped_column(primary_key=True)
+    tester_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    outcome: Mapped[str] = mapped_column(String(8))
+    reason: Mapped[str | None] = mapped_column(Text)
+    verified_at: Mapped[int] = mapped_column(BigInteger)
+    feedback: Mapped[str] = mapped_column(Text)
+    feedback_at: Mapped[int] = mapped_column(BigInteger)
+    write_id: Mapped[UUID] = mapped_column(Uuid)
 
 
 class IssueAttachment(Base):

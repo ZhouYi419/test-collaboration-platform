@@ -4,11 +4,13 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import AccountWorkspace from './AccountWorkspace.vue'
 import IssueEditor from './IssueEditor.vue'
 import IssueIcon from './IssueIcon.vue'
+import IssueVerification from './IssueVerification.vue'
+import IssueVerificationResult from './IssueVerificationResult.vue'
 import IssueWorkflow from './IssueWorkflow.vue'
 import { ApiError, authApi, errorMessage, type User } from './api'
 import {
   fieldsByType, fileSize, issueDate, issuesApi, statusLabels, typeLabels,
-  queues, type DeveloperQueue, type Attachment, type IssueDetail, type IssueSummary, type WorkflowAction,
+  queues, type DeveloperQueue, type Attachment, type IssueDetail, type IssueSummary, type VerificationOutcome, type WorkflowAction,
 } from './issuesApi'
 
 const router = useRouter()
@@ -21,11 +23,13 @@ const failure = ref<{ message: string; status: number }>()
 const downloadError = ref('')
 const editor = ref<InstanceType<typeof IssueEditor>>()
 const workflow = ref<InstanceType<typeof IssueWorkflow>>()
+const verification = ref<InstanceType<typeof IssueVerification>>()
 const view = ref<HTMLElement>()
 const changedId = ref('')
 const notice = ref('')
 const workflowNotice = ref('')
 const feedbackReceipt = ref(false)
+const verificationReceipt = ref('')
 const developerPage = computed(() => route.name === 'development')
 const pageTitle = computed(() => developerPage.value ? '开发事项' : '我的事项')
 const queue = computed<DeveloperQueue>(() => {
@@ -36,12 +40,16 @@ const listPath = computed(() => developerPage.value ? `/development?queue=${queu
 const detailBack = computed(() => {
   if (!developerPage.value || !detail.value) return listPath.value
   const state = detail.value.status
-  const destination = state === 'pending_claim' ? 'inbox' : state === 'pending_verify' ? 'feedback' : 'assigned'
+  const destination = state === 'pending_claim' ? 'inbox' : ['pending_verify', 'closed'].includes(state) ? 'feedback' : 'assigned'
   return `/development?queue=${destination}`
 })
 const canProcess = computed(() => developerPage.value && detail.value && (
   detail.value.status === 'pending_claim' || detail.value.assignee?.id === user.value?.id
 ) && ['pending_claim', 'pending_work', 'in_progress'].includes(detail.value.status))
+const canVerify = computed(() => !developerPage.value && detail.value?.status === 'pending_verify'
+  && detail.value.creator.id === user.value?.id)
+const reworking = computed(() => canProcess.value && detail.value?.status === 'in_progress'
+  && detail.value.latest_verification?.outcome === 'returned')
 const editing = computed(() => !developerPage.value && (itemId.value === 'new' || detail.value?.status === 'draft'))
 const itemId = computed(() => String(route.params.issueId ?? ''))
 const listView = computed(() => !itemId.value && failure.value?.status !== 403)
@@ -60,6 +68,7 @@ async function load() {
   failure.value = undefined
   detail.value = null
   feedbackReceipt.value = false
+  verificationReceipt.value = ''
   downloadError.value = ''
   if (target) {
     notice.value = ''
@@ -144,12 +153,31 @@ async function updated(issue: IssueDetail, action: WorkflowAction) {
   } else if (action === 'finish') {
     feedbackReceipt.value = true
     await nextTick()
-    const section = view.value?.querySelector<HTMLElement>('.feedback-result')
+    const section = view.value?.querySelector<HTMLElement>('.issue-feedback')
     section?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true })
     section?.scrollIntoView({ block: 'nearest' })
   } else {
     workflow.value?.focusAction()
   }
+}
+
+function focusVerificationResult() {
+  const result = view.value?.querySelector<HTMLElement>('#verification-result')
+  result?.focus({ preventScroll: true })
+  result?.scrollIntoView({ block: 'start' })
+}
+
+async function presentVerification(issue: IssueDetail, outcome?: VerificationOutcome) {
+  detail.value = issue
+  verificationReceipt.value = ''
+  if (outcome === 'passed' && issue.status === 'closed') {
+    verificationReceipt.value = '事项已关闭'
+  } else if (outcome === 'returned' && issue.status === 'in_progress' && issue.latest_verification?.outcome === 'returned') {
+    verificationReceipt.value = `已退回给${issue.assignee?.username ?? '负责人'}重新处理`
+  }
+  await nextTick()
+  if (canVerify.value) verification.value?.focusHeading()
+  else focusVerificationResult()
 }
 
 async function unavailable(message: string) {
@@ -172,6 +200,7 @@ async function download(file: Attachment) {
 onBeforeRouteUpdate(async (to, from) => {
   if (editor.value && !await editor.value.confirmLeave()) return false
   if (workflow.value && !await workflow.value.confirmLeave()) return false
+  if (verification.value && !await verification.value.confirmLeave()) return false
   if (!from.params.issueId && to.params.issueId) listPosition = { path: to.fullPath, scroll: window.scrollY }
   focusQueue = developerPage.value && !from.params.issueId && !to.params.issueId && to.query.queue !== from.query.queue
   if (!from.params.issueId && !to.params.issueId && to.query.queue !== from.query.queue) listPosition = undefined
@@ -181,7 +210,8 @@ onBeforeRouteUpdate(async (to, from) => {
 })
 onBeforeRouteLeave(async () => {
   if (editor.value && !await editor.value.confirmLeave()) return false
-  return workflow.value?.confirmLeave()
+  if (workflow.value && !await workflow.value.confirmLeave()) return false
+  return verification.value?.confirmLeave()
 })
 onUnmounted(() => {
   loadVersion++
@@ -270,7 +300,11 @@ watch(() => route.fullPath, load, { immediate: true })
             <div class="workflow-heading">
               <span class="issue-state" :data-status="detail.status">{{ statusLabels[detail.status] }}</span>
               <span class="workflow-updated">更新于 <time :datetime="new Date(detail.updated_at).toISOString()">{{ issueDate(detail.updated_at) }}</time></span>
-              <button v-if="canProcess && detail.status === 'in_progress'" type="button" class="admin-button feedback-jump"
+              <button v-if="canVerify" type="button" class="admin-button feedback-jump"
+                @click="verification?.focusHeading()">测试验证<IssueIcon name="jump" /></button>
+              <button v-else-if="reworking" type="button" class="admin-button feedback-jump"
+                @click="focusVerificationResult">查看退回原因<IssueIcon name="jump" /></button>
+              <button v-else-if="canProcess && detail.status === 'in_progress'" type="button" class="admin-button feedback-jump"
                 @click="workflow?.focusInput()">处理反馈<IssueIcon name="down" /></button>
             </div>
           </div>
@@ -311,19 +345,30 @@ watch(() => route.fullPath, load, { immediate: true })
                 <p v-if="downloadError" class="field-error file-error" role="alert">{{ downloadError }}</p>
               </section>
             </div>
-            <div v-if="canProcess || detail.feedback" class="detail-workflow">
-              <IssueWorkflow v-if="canProcess" ref="workflow" :issue="detail" @updated="updated"
+            <div v-if="canProcess || canVerify || detail.feedback" class="detail-workflow">
+              <div v-if="detail.feedback || canVerify" class="workflow-panel issue-review-panel">
+                <IssueVerificationResult v-if="reworking && detail.latest_verification" :result="detail.latest_verification" />
+                <section v-if="detail.feedback" class="detail-section issue-feedback">
+                  <div class="feedback-heading">
+                    <h2 tabindex="-1" :aria-describedby="feedbackReceipt ? 'feedback-receipt' : undefined">
+                      {{ detail.status === 'in_progress' ? '上次处理反馈' : '处理反馈' }}
+                    </h2>
+                    <p v-if="feedbackReceipt" id="feedback-receipt" class="feedback-receipt">
+                      <IssueIcon name="check" />处理结果已提交
+                    </p>
+                  </div>
+                  <p class="detail-text">{{ detail.feedback }}</p>
+                  <p class="feedback-time">{{ detail.assignee?.username }} · {{ detail.feedback_at && issueDate(detail.feedback_at) }}</p>
+                </section>
+                <IssueVerificationResult v-if="!reworking && detail.latest_verification" :result="detail.latest_verification"
+                  :previous="detail.status === 'pending_verify'" :receipt="verificationReceipt" />
+                <IssueWorkflow v-if="reworking" ref="workflow" :issue="detail" @updated="updated"
+                  @unavailable="unavailable" @expired="login" />
+                <IssueVerification v-if="canVerify" ref="verification" :issue="detail" @updated="presentVerification"
+                  @refreshed="presentVerification" @unavailable="load" @expired="login" />
+              </div>
+              <IssueWorkflow v-else-if="canProcess" ref="workflow" :issue="detail" @updated="updated"
                 @unavailable="unavailable" @expired="login" />
-              <section v-else-if="detail.feedback" class="detail-section workflow-feedback feedback-result">
-                <div class="feedback-heading">
-                  <h2 tabindex="-1" :aria-describedby="feedbackReceipt ? 'feedback-receipt' : undefined">处理反馈</h2>
-                  <p v-if="feedbackReceipt" id="feedback-receipt" class="feedback-receipt">
-                    <IssueIcon name="check" />处理结果已提交
-                  </p>
-                </div>
-                <p class="detail-text">{{ detail.feedback }}</p>
-                <p class="feedback-time">{{ detail.assignee?.username }} · {{ detail.feedback_at && issueDate(detail.feedback_at) }}</p>
-              </section>
             </div>
           </div>
         </template>

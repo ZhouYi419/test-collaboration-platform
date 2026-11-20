@@ -10,6 +10,8 @@ const paths = {
   arrow: 'm9 6 6 6-6 6',
   down: 'M12 4v13m-5-5 5 5 5-5 M5 20h14',
   check: 'm5 12 4 4 10-10',
+  jump: 'M12 5v14m-5-5 5 5 5-5',
+  return: 'm8 7-4 4 4 4m-4-4h11a4 4 0 0 1 0 8h-3',
 }
 defineProps<{ name: keyof typeof paths }>()
 </script>

@@ -11,7 +11,7 @@ from . import issue_service
 from .auth import get_current_user
 from .database import Database
 from .errors import api_error
-from .issue_schemas import IssueAction, IssueDetail, IssuePerson, IssueSummary
+from .issue_schemas import IssueAction, IssueDetail, IssuePerson, IssueSummary, VerifyIssue
 from .issue_uploads import Submission, parse_submission
 from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, User, UserRole
 
@@ -74,7 +74,9 @@ def developer_issues(
         "assigned": and_(Issue.assignee_id == user.id, Issue.status.in_([
             IssueStatus.PENDING_WORK, IssueStatus.IN_PROGRESS,
         ])),
-        "feedback": and_(Issue.assignee_id == user.id, Issue.status == IssueStatus.PENDING_VERIFY),
+        "feedback": and_(Issue.assignee_id == user.id, Issue.status.in_([
+            IssueStatus.PENDING_VERIFY, IssueStatus.CLOSED,
+        ])),
     }
     return db.scalars(
         select(Issue).options(load_only(
@@ -113,6 +115,11 @@ def save_issue(
 @router.post("/{issue_id}/actions", response_model=IssueDetail)
 def act_on_issue(issue_id: UUID, data: IssueAction, db: Database, user: Developer) -> IssueDetail:
     return issue_service.act_on_issue(issue_id, data, db, user)
+
+
+@router.post("/{issue_id}/verification", response_model=IssueDetail)
+def verify_issue(issue_id: UUID, data: VerifyIssue, db: Database, user: Tester) -> IssueDetail:
+    return issue_service.verify_issue(issue_id, data, db, user)
 
 
 @router.delete("/{issue_id}", status_code=204)

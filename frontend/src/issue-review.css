@@ -33,7 +33,7 @@
     background: var(--accent);
   }
 
-  :is(.issue-list-panel, .issue-empty, .detail-properties, .detail-content, .workflow-panel, .feedback-result) {
+  :is(.issue-list-panel, .issue-empty, .detail-properties, .detail-content, .workflow-panel) {
     min-width: 0;
     background: var(--surface);
     border: 1px solid var(--line);
@@ -113,6 +113,7 @@
   .issue-state[data-status="pending_work"] { color: #754b17; background: #fcf0dc; }
   .issue-state[data-status="in_progress"] { color: #255786; background: #e8f2fd; }
   .issue-state[data-status="pending_verify"] { color: #5e4488; background: #f0eaf8; }
+  .issue-state[data-status="closed"] { color: #356145; background: #edf3ef; }
   .uniform-queue .issue-state { padding-inline: 0; background: transparent; color: var(--muted); font-weight: 500; }
   .uniform-queue .issue-state::before { content: none; }
 
@@ -184,6 +185,34 @@
   .issue-confirm { border-color: var(--line); }
   .issue-confirm::backdrop { background: #26203557; }
   .issue-confirm .editor-actions { background: #faf9fc; }
+  .issue-review-panel {
+    padding: 0;
+    > :is(.detail-section, .workflow-panel) { padding: 17px 18px; }
+    > .workflow-panel { border: 0; border-top: 1px solid #eeedf2; border-radius: 0; box-shadow: none; background: transparent; }
+    > .detail-section h2 { margin-bottom: 10px; }
+    .feedback-heading { margin-bottom: 10px; }
+    .feedback-heading h2 { margin: 0; }
+  }
+  .verification-outcome {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    color: #356145;
+    font-weight: 680;
+  }
+  .verification-outcome[data-outcome="returned"] { color: #884844; }
+  .verification-reason { margin-block: 8px 10px; }
+  .verification-meta { color: var(--muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+  .verification-form {
+    .form-field { scroll-margin-bottom: 16px; }
+    :is(textarea, button) { scroll-margin-block: 12px; }
+    textarea { min-height: 116px; }
+    .form-field + :is(.action-error, .action-buttons) { margin-top: 13px; }
+    .action-buttons { flex-wrap: wrap; }
+    .action-buttons > button { white-space: nowrap; }
+  }
+  .verification-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 
 @keyframes issue-receipt { 0%, 15% { background: #ece5f6; } }
@@ -208,6 +237,8 @@
     .detail-summary dd { justify-self: start; text-align: start; }
     .feedback-jump { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; }
     .workflow-panel { padding: 15px; }
+    .issue-review-panel { padding: 0; }
+    .issue-review-panel > :is(.detail-section, .workflow-panel) { padding: 15px; }
     .detail-workflow:has(.workflow-actions) { position: sticky; bottom: 10px; z-index: 1; }
   }
 }
@@ -244,6 +275,7 @@
     .feedback-jump { padding-inline: 9px; }
     .feedback-jump .issue-icon { width: 14px; }
     .workflow-submit { min-height: 44px; }
+    .verification-form .action-buttons > .admin-primary { flex: 1.25; }
   }
 }
 

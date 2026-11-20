@@ -27,7 +27,7 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort
 
 通过 [平台首页](http://127.0.0.1:5173/) 注册和登录，通过 [API 文档](http://127.0.0.1:8000/api/docs) 查看接口。分别在前后端终端按 `Ctrl+C` 停止服务。
 
-本地开发使用单份建库基线。若开发库已记录旧版 `schema_baseline` 且结构落后，请保留旧库并将 `DATABASE_URL` 切到新的空开发库，再执行迁移。T004 在事项表中增加负责人及处理反馈字段。
+本地开发使用单份建库基线。T006 在 `issues` 增加已关闭状态，并新增 `issue_verifications`。已有旧版 `schema_baseline` 的开发库应保留为备份。另建空库并执行当前基线，需要保留旧数据时，复制并核对账号、会话、事项和附件，再切换本地服务的 `DATABASE_URL`。
 
 ### Docker Compose
 

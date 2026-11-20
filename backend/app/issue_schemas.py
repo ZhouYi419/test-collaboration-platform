@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from .models import IssueStatus
+
 IssueType = Literal["bug", "request"]
 Priority = Literal["P0", "P1", "P2", "P3"]
 Environment = Literal["dev", "uat", "prd"]
@@ -11,6 +13,7 @@ Severity = Literal["致命", "严重", "一般", "轻微"]
 Title = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
 ShortText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)]
 LongText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=5000)]
+VerificationOutcome = Literal["passed", "returned"]
 
 FIELD_LABELS = {
     "type": "申请类型", "priority": "优先级", "title": "标题", "description": "详细描述",
@@ -18,7 +21,7 @@ FIELD_LABELS = {
     "actual": "实际结果", "expected": "预期结果", "version_affected": "影响版本",
     "background": "需求背景", "outcome": "期望效果", "acceptance": "验收标准",
     "scope": "影响范围", "due": "期望完成日期",
-    "assignee_id": "指定开发", "feedback": "处理说明",
+    "assignee_id": "指定开发", "feedback": "处理说明", "reason": "退回原因",
 }
 COMMON_FIELDS = ("type", "priority", "title", "description")
 REQUIRED_BY_TYPE = {
@@ -94,7 +97,7 @@ class IssueSummary(BaseModel):
     type: IssueType | None
     title: str | None
     priority: Priority | None
-    status: Literal["draft", "pending_claim", "pending_work", "in_progress", "pending_verify"]
+    status: IssueStatus
     updated_at: int
 
 
@@ -105,6 +108,13 @@ class IssuePerson(BaseModel):
     username: str
 
 
+class VerificationResult(BaseModel):
+    outcome: VerificationOutcome
+    reason: str | None
+    tester: IssuePerson
+    verified_at: int
+
+
 class IssueDetail(IssueSummary):
     version: int
     form: IssueForm
@@ -113,6 +123,7 @@ class IssueDetail(IssueSummary):
     assignee: IssuePerson | None
     feedback: str | None
     feedback_at: int | None
+    latest_verification: VerificationResult | None
 
 
 class IssueAction(BaseModel):
@@ -126,4 +137,18 @@ class IssueAction(BaseModel):
     @field_validator("feedback")
     @classmethod
     def validate_feedback(cls, value: str | None) -> str | None:
+        return IssueForm.normalize_text(value)
+
+
+class VerifyIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Annotated[int, Field(strict=True, ge=1)]
+    write_id: UUID
+    outcome: VerificationOutcome
+    reason: LongText | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
         return IssueForm.normalize_text(value)

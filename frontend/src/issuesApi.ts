@@ -3,14 +3,23 @@ import { request, requestBlob, writeJson } from './http'
 export const priorityOptions = ['P0', 'P1', 'P2', 'P3']
 export const typeLabels = { bug: 'Bug 修复', request: '需求' }
 export type IssueType = keyof typeof typeLabels
-export type IssueStatus = 'draft' | 'pending_claim' | 'pending_work' | 'in_progress' | 'pending_verify'
+export type IssueStatus = 'draft' | 'pending_claim' | 'pending_work' | 'in_progress' | 'pending_verify' | 'closed'
 export const statusLabels: Record<IssueStatus, string> = {
   draft: '草稿', pending_claim: '待领取', pending_work: '待处理', in_progress: '处理中', pending_verify: '待验证',
+  closed: '已关闭',
 }
 export const queues = { inbox: '待领取', assigned: '我的待办', feedback: '已反馈' }
 export type DeveloperQueue = keyof typeof queues
 export type WorkflowAction = 'claim' | 'start' | 'finish'
 export interface IssuePerson { id: number; username: string }
+export type VerificationOutcome = 'passed' | 'returned'
+
+export interface VerificationResult {
+  outcome: VerificationOutcome
+  reason: string | null
+  tester: IssuePerson
+  verified_at: number
+}
 
 export interface IssueFieldSpec {
   key: string
@@ -71,6 +80,7 @@ export interface IssueDetail extends IssueSummary {
   assignee: IssuePerson | null
   feedback: string | null
   feedback_at: number | null
+  latest_verification: VerificationResult | null
 }
 
 interface IssueWrite {
@@ -88,6 +98,8 @@ export const issuesApi = {
   development: (queue: DeveloperQueue) => request<IssueSummary[]>(`issues/development?queue=${queue}`),
   act: (id: string, action: WorkflowAction, version: number, write_id: string, feedback?: string) =>
     writeJson<IssueDetail>('POST', `issues/${id}/actions`, { action, version, write_id, feedback }),
+  verify: (id: string, outcome: VerificationOutcome, version: number, write_id: string, reason: string | null) =>
+    writeJson<IssueDetail>('POST', `issues/${id}/verification`, { outcome, version, write_id, reason }),
   get: (id: string) => request<IssueDetail>(`issues/${encodeURIComponent(id)}`),
   save(id: string, data: IssueWrite, files: File[]) {
     const body = new FormData()

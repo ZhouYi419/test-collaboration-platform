@@ -10,9 +10,9 @@ from sqlalchemy.orm.exc import StaleDataError
 from .errors import api_error, validation_error
 from .issue_schemas import (
     COMMON_FIELDS, AttachmentInfo, IssueAction, IssueDetail, IssueForm, IssuePerson,
-    IssueSummary, IssueWrite,
+    IssueSummary, IssueWrite, VerificationResult, VerifyIssue,
 )
-from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, User, UserRole
+from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, IssueVerification, User, UserRole
 
 
 def not_found() -> HTTPException:
@@ -26,12 +26,20 @@ def conflict() -> HTTPException:
 def issue_detail(db: Session, issue: Issue) -> IssueDetail:
     files = db.scalars(select(IssueAttachment).where(IssueAttachment.issue_id == issue.id).order_by(IssueAttachment.id))
     form = IssueForm(**{key: getattr(issue, key) for key in COMMON_FIELDS}, **issue.details)
+    # SQLite 的详情查询可能读到并发写入的新记录，只返回当前事项版本已经包含的验证。
+    latest = db.scalar(select(IssueVerification).where(
+        IssueVerification.issue_id == issue.id, IssueVerification.issue_version < issue.version,
+    ).order_by(IssueVerification.issue_version.desc()).limit(1))
     return IssueDetail(
         **IssueSummary.model_validate(issue).model_dump(), version=issue.version, form=form,
         attachments=[AttachmentInfo.model_validate(file) for file in files],
         creator=IssuePerson.model_validate(db.get(User, issue.creator_id)),
         assignee=IssuePerson.model_validate(db.get(User, issue.assignee_id)) if issue.assignee_id else None,
         feedback=issue.feedback, feedback_at=issue.feedback_at,
+        latest_verification=VerificationResult(
+            outcome=latest.outcome, reason=latest.reason, verified_at=latest.verified_at,
+            tester=IssuePerson.model_validate(db.get(User, latest.tester_id)),
+        ) if latest is not None else None,
     )
 
 
@@ -109,10 +117,15 @@ def act_on_issue(issue_id: UUID, data: IssueAction, db: Session, user: User) -> 
         raise api_error(409, "claim_unavailable", "该事项已被其他开发领取。")
     if issue.status != IssueStatus.PENDING_CLAIM and issue.assignee_id != user.id:
         raise not_found()
-    if issue.last_write_id == data.write_id:
+    transitions = {
+        "claim": (IssueStatus.PENDING_CLAIM, IssueStatus.PENDING_WORK),
+        "start": (IssueStatus.PENDING_WORK, IssueStatus.IN_PROGRESS),
+        "finish": (IssueStatus.IN_PROGRESS, IssueStatus.PENDING_VERIFY),
+    }
+    expected, destination = transitions[data.action]
+    if issue.last_write_id == data.write_id and issue.version == data.version + 1 and issue.status == destination:
         return issue_detail(db, issue)
-    expected = {"claim": IssueStatus.PENDING_CLAIM, "start": IssueStatus.PENDING_WORK, "finish": IssueStatus.IN_PROGRESS}
-    if issue.version != data.version or issue.status != expected[data.action]:
+    if issue.version != data.version or issue.status != expected:
         raise conflict()
     if data.action != "claim" and issue.assignee_id != user.id:
         raise not_found()
@@ -122,13 +135,10 @@ def act_on_issue(issue_id: UUID, data: IssueAction, db: Session, user: User) -> 
     now = time.time_ns() // 1_000_000
     if data.action == "claim":
         issue.assignee_id = user.id
-        issue.status = IssueStatus.PENDING_WORK
-    elif data.action == "start":
-        issue.status = IssueStatus.IN_PROGRESS
-    else:
+    elif data.action == "finish":
         issue.feedback = data.feedback
         issue.feedback_at = now
-        issue.status = IssueStatus.PENDING_VERIFY
+    issue.status = destination
     issue.updated_at = now
     issue.last_write_id = data.write_id
     try:
@@ -138,10 +148,64 @@ def act_on_issue(issue_id: UUID, data: IssueAction, db: Session, user: User) -> 
     except StaleDataError:
         db.rollback()
         current = db.get(Issue, issue_id, with_for_update={"read": True})
-        if current and current.assignee_id == user.id and current.last_write_id == data.write_id:
+        if (current and current.assignee_id == user.id and current.last_write_id == data.write_id
+                and current.version == data.version + 1 and current.status == destination):
             return issue_detail(db, current)
         if data.action == "claim":
             raise api_error(409, "claim_unavailable", "该事项已被其他开发领取。") from None
+        raise conflict() from None
+    return result
+
+
+def verification_replayed(db: Session, issue: Issue, user: User, data: VerifyIssue) -> bool:
+    record = db.scalar(select(IssueVerification).where(
+        IssueVerification.issue_id == issue.id, IssueVerification.write_id == data.write_id,
+    ))
+    if record is None:
+        return False
+    if (record.tester_id, record.issue_version, record.outcome, record.reason) != (
+        user.id, data.version, data.outcome, data.reason,
+    ):
+        raise conflict()
+    return True
+
+
+def verify_issue(issue_id: UUID, data: VerifyIssue, db: Session, user: User) -> IssueDetail:
+    issue = db.get(Issue, issue_id, with_for_update=True)
+    if issue is None or issue.creator_id != user.id:
+        raise not_found()
+    if verification_replayed(db, issue, user, data):
+        # SQLite 上并发请求可能在读取事项之后才提交，重试要返回最新状态。
+        db.refresh(issue, with_for_update={"read": True})
+        return issue_detail(db, issue)
+    if (issue.version != data.version or issue.status != IssueStatus.PENDING_VERIFY
+            or not issue.feedback or issue.feedback_at is None):
+        raise conflict()
+    if data.outcome == "returned" and not data.reason:
+        raise validation_error({"reason": "请填写退回原因"})
+    if data.outcome == "passed" and data.reason is not None:
+        raise validation_error({"reason": "验证通过时无需填写退回原因"})
+
+    now = time.time_ns() // 1_000_000
+    record = IssueVerification(
+        issue_id=issue.id, issue_version=issue.version, tester_id=user.id, outcome=data.outcome,
+        reason=data.reason, verified_at=now, feedback=issue.feedback, feedback_at=issue.feedback_at, write_id=data.write_id,
+    )
+    issue.status = IssueStatus.CLOSED if data.outcome == "passed" else IssueStatus.IN_PROGRESS
+    issue.updated_at = now
+    issue.last_write_id = data.write_id
+    try:
+        # 先确认版本竞争已胜出，再写入本轮验证记录。两次写入在同一事务提交。
+        db.flush()
+        db.add(record)
+        db.flush()
+        result = issue_detail(db, issue)
+        db.commit()
+    except StaleDataError:
+        db.rollback()
+        current = db.get(Issue, issue_id, with_for_update={"read": True})
+        if current and current.creator_id == user.id and verification_replayed(db, current, user, data):
+            return issue_detail(db, current)
         raise conflict() from None
     return result
 

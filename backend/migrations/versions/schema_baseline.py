@@ -46,17 +46,35 @@ def upgrade() -> None:
         sa.Column("priority", sa.String(2), nullable=True),
         sa.Column("details", sa.JSON(), nullable=False),
         sa.CheckConstraint(
-            "status IN ('draft', 'pending_claim', 'pending_work', 'in_progress', 'pending_verify')",
+            "status IN ('draft', 'pending_claim', 'pending_work', 'in_progress', 'pending_verify', 'closed')",
             name="ck_issues_status",
         ),
         sa.CheckConstraint(
             "status = 'draft' OR (status = 'pending_claim' AND assignee_id IS NULL) "
-            "OR (status IN ('pending_work', 'in_progress', 'pending_verify') AND assignee_id IS NOT NULL)",
+            "OR (status IN ('pending_work', 'in_progress', 'pending_verify', 'closed') AND assignee_id IS NOT NULL)",
             name="ck_issues_assignment",
         ),
     )
     op.create_index("ix_issues_creator_updated", "issues", ["creator_id", "updated_at", "id"])
     op.create_index("ix_issues_assignee_id", "issues", ["assignee_id"])
+    op.create_table(
+        "issue_verifications",
+        sa.Column("issue_id", sa.Uuid(), sa.ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column("issue_version", sa.Integer(), primary_key=True),
+        sa.Column("tester_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("outcome", sa.String(8), nullable=False),
+        sa.Column("reason", sa.Text(), nullable=True),
+        sa.Column("verified_at", sa.BigInteger(), nullable=False),
+        sa.Column("feedback", sa.Text(), nullable=False),
+        sa.Column("feedback_at", sa.BigInteger(), nullable=False),
+        sa.Column("write_id", sa.Uuid(), nullable=False),
+        sa.CheckConstraint(
+            "(outcome = 'passed' AND reason IS NULL) OR "
+            "(outcome = 'returned' AND reason IS NOT NULL AND length(trim(reason)) BETWEEN 1 AND 5000)",
+            name="ck_issue_verifications_outcome",
+        ),
+        sa.UniqueConstraint("issue_id", "write_id", name="uq_issue_verifications_write"),
+    )
     op.create_table(
         "issue_attachments",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -71,6 +89,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("issue_attachments")
+    op.drop_table("issue_verifications")
     op.drop_table("issues")
     op.drop_table("login_sessions")
     op.drop_table("users")
