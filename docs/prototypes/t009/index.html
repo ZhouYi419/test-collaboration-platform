@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>统计看板 · 测试协作平台</title>
+  <link rel="stylesheet" href="../../../frontend/src/styles.css">
+  <link rel="stylesheet" href="../../../frontend/src/admin.css">
+  <link rel="stylesheet" href="../../../frontend/src/workspace.css">
+  <link rel="stylesheet" href="../../../frontend/src/issues.css">
+  <link rel="stylesheet" href="../../../frontend/src/issue-review.css">
+  <link rel="stylesheet" href="prototype.css">
+  <script src="prototype.js" defer></script>
+</head>
+<body>
+  <div class="account-workspace issue-workspace">
+    <header class="workspace-header">
+      <div class="workspace-header-inner">
+        <div class="workspace-brand wordmark"><span class="brand-mark" aria-hidden="true"></span>测试协作平台</div>
+        <nav class="workspace-nav" aria-label="工作区导航" id="navigation"></nav>
+        <div class="workspace-identity" id="identity"></div>
+      </div>
+    </header>
+    <main class="admin-layout"><div class="workspace-content issue-surface" id="view"></div></main>
+    <p class="screen-reader" id="announcement" role="status"></p>
+  </div>
+  <footer class="review-controls" aria-label="原型评审入口">
+    <span>原型评审</span>
+    <a href="index.html#tester">测试</a>
+    <a href="index.html#developer">开发</a>
+    <a href="index.html#admin">管理员</a>
+    <a href="index.html?case=empty#tester">空状态</a>
+    <a href="index.html?case=loading#tester">加载中</a>
+    <a href="index.html?case=error#tester">读取失败</a>
+    <a href="index.html?case=range-error#tester">切换日期失败</a>
+    <a href="index.html#unassigned">权限受限</a>
+  </footer>
+</body>
+</html>

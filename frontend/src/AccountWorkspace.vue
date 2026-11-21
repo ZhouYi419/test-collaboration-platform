@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { roleLabels, type User } from './api'
+import IssueIcon from './IssueIcon.vue'
 import NotificationInbox from './NotificationInbox.vue'
 import { useNotificationSession } from './notificationSession'
 
@@ -35,6 +36,10 @@ watch(() => props.user, user => { if (user) notifications.select(user) }, { imme
           <RouterLink v-if="user.can_grant_admin" class="nav-link" to="/admin/authorizations"
             :aria-current="route.name === 'admin-authorizations' ? 'page' : undefined">
             <span class="nav-icon lock-icon" aria-hidden="true"></span>管理员授权
+          </RouterLink>
+          <RouterLink v-if="user.role" class="nav-link" to="/dashboard"
+            :aria-current="route.name === 'dashboard' ? 'page' : undefined">
+            <IssueIcon name="stats" />统计看板
           </RouterLink>
           <RouterLink class="nav-link" to="/account" :aria-current="route.name === 'account' ? 'page' : undefined">
             <span class="nav-icon person-icon" aria-hidden="true"></span>我的账号

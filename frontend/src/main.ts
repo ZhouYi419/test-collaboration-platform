@@ -6,6 +6,7 @@ import AuthPage from './AuthPage.vue'
 import AccountPage from './AccountPage.vue'
 import AdminAccountsPage from './AdminAccountsPage.vue'
 import IssuePage from './IssuePage.vue'
+import DashboardPage from './DashboardPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/account', name: 'account', component: AccountPage, meta: { workspace: true } },
     { path: '/issues/:issueId?', name: 'issues', component: IssuePage, meta: { workspace: true } },
     { path: '/development/:issueId?', name: 'development', component: IssuePage, meta: { workspace: true } },
+    { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { workspace: true } },
     { path: '/admin/accounts', name: 'admin-accounts', component: AdminAccountsPage, meta: { workspace: true } },
     {
       path: '/admin/authorizations', name: 'admin-authorizations', component: AdminAccountsPage,

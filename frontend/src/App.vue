@@ -16,6 +16,7 @@ watch(currentRoute, (to) => {
     displayedRoute.value = to
     await nextTick()
     if (!from.name || currentRoute.value !== to) return
+    if (from.name === 'dashboard' && to.name === 'dashboard') return
     const origin = notifications.origin.value
     const restored = origin?.destination === from.fullPath && origin.from === to.fullPath
     window.scrollTo(0, restored ? origin.scroll : 0)

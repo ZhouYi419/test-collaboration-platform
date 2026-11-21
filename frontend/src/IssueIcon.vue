@@ -18,6 +18,7 @@ const paths = {
   started: 'm9 6 10 6-10 6z',
   claimed: 'M17 20H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6m2 8 3 3 5-5M8 10h3m-3 4h2M14 4h4a2 2 0 0 1 2 2v3',
   passed: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM8 12l3 3 5-6',
+  stats: 'M4 19h16M7 16v-4m5 4V5m5 11V8',
 }
 defineProps<{ name: keyof typeof paths }>()
 </script>

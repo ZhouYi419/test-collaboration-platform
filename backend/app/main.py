@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from .admin import router as admin_router
 from .auth import router as auth_router
 from .config import Settings
+from .dashboard import router as dashboard_router
 from .errors import validation_error
 from .issues import router as issues_router
 from .notifications import router as notifications_router
@@ -39,11 +40,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_router)
     app.include_router(issues_router)
     app.include_router(notifications_router)
+    app.include_router(dashboard_router)
 
     @app.middleware("http")
     async def protect_private_requests(request: Request, call_next):
         if not (
-            request.url.path in {"/api/issues", "/api/notifications"}
+            request.url.path in {"/api/issues", "/api/notifications", "/api/dashboard"}
             or request.url.path.startswith(("/api/auth/", "/api/admin/", "/api/issues/", "/api/notifications/"))
         ):
             return await call_next(request)
