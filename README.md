@@ -95,7 +95,20 @@ npm.cmd test
 npm.cmd run build
 ```
 
-前端 API 请求默认在 60 秒后超时，覆盖响应体和附件读取。写请求不自动重试；事项保存和处理的手动重试沿用原请求标识。当前仓库尚未配置 GitHub Actions，CI 与报告归档列在后续任务中。
+前端 API 请求默认在 60 秒后超时，覆盖响应体和附件读取。写请求不自动重试。事项保存和处理的手动重试沿用原请求标识。当前仓库尚未配置 GitHub Actions。
+
+### 浏览器回归
+
+在 Windows 本机安装 Google Chrome 和 Microsoft Edge，按前面的步骤安装前端依赖。然后在项目根目录安装浏览器测试依赖并下载 Playwright Firefox。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements-e2e.txt
+$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $PWD '.pytest_cache/playwright-browsers'
+.\.venv\Scripts\python.exe -m playwright install firefox
+.\e2e\run.ps1
+```
+
+在同一个 PowerShell 窗口可用 `.\e2e\run.ps1 -Suite chrome` 单独执行一组，也可选择 `edge` 或 `firefox`。每个用例启动临时前后端并创建独立的 SQLite 数据库。脚本输出报告路径，`results.xml` 包含浏览器版本和测试结果，`evidence/` 保留页面用例失败时的截图与追踪，`tmp/` 保留临时服务日志。[覆盖与验收记录](docs/TASKS.md#浏览器验收)
 
 ## 项目文档
 
