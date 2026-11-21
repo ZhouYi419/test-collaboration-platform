@@ -7,7 +7,7 @@
 - 后端：Python + FastAPI，提供业务 API、参数校验和 OpenAPI 文档；采用模块化单体，不引入微服务。
 - 数据库：PostgreSQL；SQLAlchemy 管理数据访问，Alembic 管理数据库迁移。
 - 测试：pytest + HTTPX 做 API 测试；Playwright Python + pytest 做 Web 和端到端测试；单元测试覆盖核心业务规则。
-- 工程：已有 Docker Compose 运行配置及 pytest、前端请求层测试和构建命令。GitHub Actions 分层测试、报告归档及缺陷追踪流水线仍属后续任务，当前仓库尚无工作流配置。
+- 工程：已有 Docker Compose 运行配置及 pytest、前端请求层测试和构建命令。GitHub Actions 工作流复用现有命令，缺陷通过 GitHub Issue 与 PR 追踪。
 - 选型替代：Java + Spring Boot 更适合以 Java 企业研发岗位为目标，但学习和搭建成本可能更高；Vue 可以替换为团队熟悉的 React。
 
 ## 系统边界
@@ -37,7 +37,7 @@
 主要实体暂定用户、会话、事项、处理记录、验证记录、附件及操作日志。状态和访问范围在对应功能细化时确定。测试准备隔离数据，避免在日志和失败证据中泄露凭据。
 
 ## 测试与运行
-本地已有 Compose 开发服务配置，接口测试使用独立数据；后续 CI 计划按风险和运行时间分层执行。Playwright 对 Firefox 和品牌版 Chrome/Edge 的运行方式依赖安装及环境，不能仅用 Chromium 代替品牌浏览器兼容性验收。GitHub 合并门禁需要额外配置仓库规则。
+本地已有 Compose 开发服务配置，接口测试使用独立数据。基础检查在 Ubuntu 运行 Python 3.13 和 Node.js 24，PostgreSQL 18 由作业部署为临时服务。浏览器回归在 Windows 复用 T010 脚本，用镜像内的 Chrome、Edge 和安装的 Playwright Firefox。报告和浏览器失败证据归档在对应 Actions 运行中。GitHub 合并门禁通过仓库规则配置，首轮先展示检查结果。
 
 ## T001 实现与架构评审
 

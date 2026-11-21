@@ -95,7 +95,7 @@ npm.cmd test
 npm.cmd run build
 ```
 
-前端 API 请求默认在 60 秒后超时，覆盖响应体和附件读取。写请求不自动重试。事项保存和处理的手动重试沿用原请求标识。当前仓库尚未配置 GitHub Actions。
+前端 API 请求默认在 60 秒后超时，覆盖响应体和附件读取。写请求不自动重试。事项保存和处理的手动重试沿用原请求标识。
 
 ### 浏览器回归
 
@@ -109,6 +109,13 @@ $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $PWD '.pytest_cache/playwright-browser
 ```
 
 在同一个 PowerShell 窗口可用 `.\e2e\run.ps1 -Suite chrome` 单独执行一组，也可选择 `edge` 或 `firefox`。每个用例启动临时前后端并创建独立的 SQLite 数据库。脚本输出报告路径，`results.xml` 包含浏览器版本和测试结果，`evidence/` 保留页面用例失败时的截图与追踪，`tmp/` 保留临时服务日志。[覆盖与验收记录](docs/TASKS.md#浏览器验收)
+
+### GitHub Actions 与缺陷跟踪
+
+- 「基础质量检查」由面向 `main` 的 PR 或推送到 `main` 触发。在 Actions 运行详情的 Artifacts 下载 SQLite、PostgreSQL 和前端的 JUnit 报告。
+- 在 Actions 选择「三浏览器回归」，用 **Run workflow** 手动触发。从 Artifacts 下载浏览器报告、服务日志和发生失败时生成的截图与追踪。
+- 在 Issues 选「缺陷报告」并填写复现信息。修复 PR 关联 Issue 并记录复验，复验通过后可填写 `Closes #编号`，使缺陷随合并关闭。
+- 首轮展示检查结果。[GitHub 验收项](docs/TASKS.md#github-验收)
 
 ## 项目文档
 

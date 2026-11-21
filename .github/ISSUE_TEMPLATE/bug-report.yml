@@ -1,0 +1,35 @@
+name: 缺陷报告
+description: 记录测试协作平台中可复现的问题
+title: '[缺陷] '
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: 复现环境
+      description: 填写提交 SHA 或版本，以及与问题相关的浏览器、视口或数据库。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 写明使用的角色、前置数据和触发问题的最短操作顺序。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 失败证据
+      description: 如有，请附脱敏截图、错误日志、失败用例或 Actions 运行链接。

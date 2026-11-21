@@ -4,7 +4,9 @@
 
 先阅读 docs/PRD.md、docs/ARCHITECTURE.md、docs/TASKS.md 和 docs/UI_DESIGN.md。用户会指定要开始的功能；按对应任务卡确认该功能仍影响实现与验收的关键细节，条件足够时继续已授权的开发。
 
-T010 已交付分组浏览器回归和需求覆盖记录。Chrome 桌面、Edge 窄屏和 Playwright Firefox 共 4 项通过，SQLite 和 PostgreSQL 各通过 37 项接口回归。运行命令见 [README](../README.md#浏览器回归)。下一项为 T011「缺陷闭环与质量流水线」。
+T011「缺陷闭环与质量流水线」首轮配置通过本地检查，待 GitHub 验收。触发方式、报告下载与缺陷模板见 [README](../README.md#github-actions-与缺陷跟踪)，上线验收项见 [任务记录](TASKS.md#github-验收)。
+
+T010 已交付分组浏览器回归和需求覆盖记录。Chrome 桌面、Edge 窄屏和 Playwright Firefox 共 4 项通过，SQLite 和 PostgreSQL 各通过 37 项接口回归。运行命令见 [README](../README.md#浏览器回归)。
 
 T009 已交付三种角色的统计看板、状态跳转和日期筛选。[交付验收](TASKS.md#t009-交付与验收2026-11-21) 覆盖真实事项退回、重新反馈及关闭。平台本地入口为 127.0.0.1:5173，沿用 T008 的 SQLite 开发库和操作人员配置。
 

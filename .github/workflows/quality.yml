@@ -1,0 +1,90 @@
+name: 基础质量检查
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (${{ matrix.database }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - database: sqlite
+            postgres_image: ''
+          - database: postgresql
+            postgres_image: postgres:18
+    services:
+      postgres:
+        image: ${{ matrix.postgres_image }}
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_DB: collaboration_test
+          # 只在本次作业的临时数据库中存放用例数据。
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U ci -d collaboration_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: 安装后端测试依赖
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: 运行接口回归
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: ${{ matrix.database == 'postgresql' && format('postgresql+psycopg://ci@127.0.0.1:{0}/collaboration_test', job.services.postgres.ports['5432']) || '' }}
+        run: python -m pytest -q --junitxml="$RUNNER_TEMP/api.xml"
+      - name: 归档接口测试报告
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-${{ matrix.database }}
+          path: ${{ runner.temp }}/api.xml
+
+  frontend:
+    name: 前端测试与构建
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 安装前端依赖
+        run: npm ci
+      - name: 运行前端请求测试
+        run: node --test --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/frontend.xml" 'tests/*.test.ts'
+      - name: 类型检查与生产构建
+        run: npm run build
+      - name: 归档前端测试报告
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-tests
+          path: ${{ runner.temp }}/frontend.xml
