@@ -101,6 +101,29 @@ class IssueSummary(BaseModel):
     updated_at: int
 
 
+class IssueListQuery(BaseModel):
+    q: Title | None = None
+    type: IssueType | None = None
+    priority: Priority | None = None
+    status: IssueStatus | None = None
+    sort: Literal["recent", "oldest", "priority"] = "recent"
+    page: Annotated[int, Field(ge=1, le=1_000_000)] = 1
+
+    @field_validator("q")
+    @classmethod
+    def normalize_search(cls, value: str | None) -> str | None:
+        return IssueForm.normalize_text(value)
+
+
+class DevelopmentQuery(IssueListQuery):
+    queue: Literal["inbox", "assigned", "feedback"] = "inbox"
+
+
+class IssuePage(BaseModel):
+    items: list[IssueSummary]
+    has_next: bool
+
+
 class IssuePerson(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,6 +136,14 @@ class VerificationResult(BaseModel):
     reason: str | None
     tester: IssuePerson
     verified_at: int
+
+
+class IssueRound(BaseModel):
+    number: int
+    developer: IssuePerson
+    feedback: str
+    feedback_at: int
+    verification: VerificationResult | None
 
 
 class IssueDetail(IssueSummary):

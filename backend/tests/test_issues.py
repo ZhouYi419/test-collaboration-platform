@@ -101,7 +101,7 @@ async def test_request_requires_its_fields_and_valid_enums(app, client):
     assert full.status_code == 200, full.text
     assert full.json()["form"]["environment"] is None
     assert full.json()["form"]["due"] == "2026-12-01"
-    assert len((await client.get("/api/issues", headers=owner)).json()) == 1
+    assert len((await client.get("/api/issues", headers=owner)).json()["items"]) == 1
 
 
 async def test_issue_and_attachment_permissions_are_owner_scoped(app, client):
@@ -119,7 +119,7 @@ async def test_issue_and_attachment_permissions_are_owner_scoped(app, client):
         assert (await write(client, unauthorized, path)).status_code == 403
         expected = 404 if role == "developer" else 403
         assert (await client.get(f"{path}/attachments/{file_id}", headers=unauthorized)).status_code == expected
-    assert (await client.get("/api/issues", headers=other)).json() == []
+    assert (await client.get("/api/issues", headers=other)).json()["items"] == []
     assert (await client.get(path, headers=other)).status_code == 404
     assert (await client.get(f"{path}/attachments/{file_id}", headers=other)).status_code == 404
     assert (await write(client, other, path, version=1)).status_code == 404
@@ -165,7 +165,7 @@ async def test_idempotent_create_and_concurrent_draft_submission(app, client):
         write(client, owner, path, form=REQUEST, version=1, submit=True),
     )
     assert sorted(response.status_code for response in responses) == [200, 409]
-    assert len((await client.get("/api/issues", headers=owner)).json()) == 1
+    assert len((await client.get("/api/issues", headers=owner)).json()["items"]) == 1
 
 
 async def test_upload_parser_rejects_malformed_input_after_authorization(app, client):
@@ -180,7 +180,7 @@ async def test_upload_parser_rejects_malformed_input_after_authorization(app, cl
     assert "attachments" in missing_boundary.json()["detail"]["fields"]
     invalid_payload = await client.put(path, headers=owner, files=[("data", (None, "{"))])
     assert invalid_payload.status_code == 422
-    assert (await client.get("/api/issues", headers=owner)).json() == []
+    assert (await client.get("/api/issues", headers=owner)).json()["items"] == []
 
 
 async def test_multipart_uses_shared_field_validation_without_exposing_input(app, client):

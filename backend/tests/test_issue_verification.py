@@ -61,9 +61,9 @@ async def test_verify_close_and_repeat_rework(app, client, form, returns):
         assert (await verify(client, tester, returned, "passed")).status_code == 409
         assert (await act(client, developer, returned, "start")).status_code == 409
         assert (await client.get(path, headers=developer)).json() == returned
-        queue = (await client.get("/api/issues/development?queue=assigned", headers=developer)).json()
+        queue = (await client.get("/api/issues/development?queue=assigned", headers=developer)).json()["items"]
         assert [(item["id"], item["status"]) for item in queue] == [(issue["id"], "in_progress")]
-        assert (await client.get("/api/issues/development?queue=feedback", headers=developer)).json() == []
+        assert (await client.get("/api/issues/development?queue=feedback", headers=developer)).json()["items"] == []
         updated = await act(client, developer, returned, "finish", feedback=f"第 {round_number} 次重新处理")
         assert updated.status_code == 200, updated.text
         fresh = updated.json()
@@ -83,9 +83,9 @@ async def test_verify_close_and_repeat_rework(app, client, form, returns):
     assert result["tester"]["id"] == user_id(app, tester) and result["verified_at"] == closed["updated_at"]
     for account in (tester, developer):
         assert (await client.get(path, headers=account)).json() == closed
-    queue = (await client.get("/api/issues/development?queue=feedback", headers=developer)).json()
+    queue = (await client.get("/api/issues/development?queue=feedback", headers=developer)).json()["items"]
     assert [(item["id"], item["status"]) for item in queue] == [(issue["id"], "closed")]
-    assert (await client.get("/api/issues", headers=tester)).json()[0]["status"] == "closed"
+    assert (await client.get("/api/issues", headers=tester)).json()["items"][0]["status"] == "closed"
     assert (await act(client, developer, closed, "finish", feedback="无效更新")).status_code == 409
     assert (await verify(client, tester, closed, "returned", reason="无效退回")).status_code == 409
     assert [(row.issue_version, row.outcome, row.reason, row.feedback, row.feedback_at)

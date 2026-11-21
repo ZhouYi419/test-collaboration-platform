@@ -1,6 +1,7 @@
 import { request, requestBlob, writeJson } from './http'
 
-export const priorityOptions = ['P0', 'P1', 'P2', 'P3']
+export type IssuePriority = 'P0' | 'P1' | 'P2' | 'P3'
+export const priorityOptions: IssuePriority[] = ['P0', 'P1', 'P2', 'P3']
 export const typeLabels = { bug: 'Bug 修复', request: '需求' }
 export type IssueType = keyof typeof typeLabels
 export type IssueStatus = 'draft' | 'pending_claim' | 'pending_work' | 'in_progress' | 'pending_verify' | 'closed'
@@ -10,6 +11,34 @@ export const statusLabels: Record<IssueStatus, string> = {
 }
 export const queues = { inbox: '待领取', assigned: '我的待办', feedback: '已反馈' }
 export type DeveloperQueue = keyof typeof queues
+export const queueStatuses: Record<DeveloperQueue, readonly IssueStatus[]> = {
+  inbox: ['pending_claim'], assigned: ['pending_work', 'in_progress'], feedback: ['pending_verify', 'closed'],
+}
+export const issueSortLabels = { recent: '最近更新', oldest: '最早更新', priority: '优先级从高到低' }
+export type IssueSort = keyof typeof issueSortLabels
+export const issueSearchLimit = 100
+export const issuePageLimit = 1_000_000
+
+export interface IssueFilters {
+  q: string
+  type: IssueType | ''
+  priority: IssuePriority | ''
+  status: IssueStatus | ''
+  sort: IssueSort
+}
+
+export const defaultIssueFilters: IssueFilters = { q: '', type: '', priority: '', status: '', sort: 'recent' }
+
+export function issueQueryParams(filters: IssueFilters, page: number): Record<string, string> {
+  const params: Record<string, string> = {}
+  for (const key of ['q', 'type', 'priority', 'status'] as const) {
+    if (filters[key]) params[key] = filters[key]
+  }
+  if (filters.sort !== 'recent') params.sort = filters.sort
+  if (page > 1) params.page = String(page)
+  return params
+}
+
 export type WorkflowAction = 'claim' | 'start' | 'finish'
 export interface IssuePerson { id: number; username: string }
 export type VerificationOutcome = 'passed' | 'returned'
@@ -19,6 +48,14 @@ export interface VerificationResult {
   reason: string | null
   tester: IssuePerson
   verified_at: number
+}
+
+export interface IssueRound {
+  number: number
+  developer: IssuePerson
+  feedback: string
+  feedback_at: number
+  verification: VerificationResult | null
 }
 
 export interface IssueFieldSpec {
@@ -72,6 +109,11 @@ export interface IssueSummary {
   updated_at: number
 }
 
+interface IssuePage {
+  items: IssueSummary[]
+  has_next: boolean
+}
+
 export interface IssueDetail extends IssueSummary {
   version: number
   form: Record<string, string | null>
@@ -93,14 +135,19 @@ interface IssueWrite {
 }
 
 export const issuesApi = {
-  list: () => request<IssueSummary[]>('issues'),
+  list: (filters: IssueFilters, page: number, queue?: DeveloperQueue) => {
+    const params = new URLSearchParams(issueQueryParams(filters, page))
+    if (queue) params.set('queue', queue)
+    const endpoint = queue ? 'issues/development' : 'issues'
+    return request<IssuePage>(params.size ? `${endpoint}?${params}` : endpoint)
+  },
   developers: () => request<IssuePerson[]>('issues/developers'),
-  development: (queue: DeveloperQueue) => request<IssueSummary[]>(`issues/development?queue=${queue}`),
   act: (id: string, action: WorkflowAction, version: number, write_id: string, feedback?: string) =>
     writeJson<IssueDetail>('POST', `issues/${id}/actions`, { action, version, write_id, feedback }),
   verify: (id: string, outcome: VerificationOutcome, version: number, write_id: string, reason: string | null) =>
     writeJson<IssueDetail>('POST', `issues/${id}/verification`, { outcome, version, write_id, reason }),
   get: (id: string) => request<IssueDetail>(`issues/${encodeURIComponent(id)}`),
+  history: (id: string, signal: AbortSignal) => request<IssueRound[]>(`issues/${encodeURIComponent(id)}/history`, { signal }),
   save(id: string, data: IssueWrite, files: File[]) {
     const body = new FormData()
     body.set('data', JSON.stringify(data))

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>测试协作平台</title>
+  <link rel="stylesheet" href="../../../frontend/src/styles.css">
+  <link rel="stylesheet" href="../../../frontend/src/admin.css">
+  <link rel="stylesheet" href="../../../frontend/src/workspace.css">
+  <link rel="stylesheet" href="../../../frontend/src/select-control.css">
+  <link rel="stylesheet" href="../../../frontend/src/accounts.css">
+  <link rel="stylesheet" href="../../../frontend/src/issues.css">
+  <link rel="stylesheet" href="../../../frontend/src/issue-review.css">
+  <link rel="stylesheet" href="prototype.css">
+  <script src="prototype.js" defer></script>
+</head>
+<body>
+  <div class="account-workspace issue-workspace">
+    <header class="workspace-header">
+      <div class="workspace-header-inner">
+        <div class="workspace-brand wordmark"><span class="brand-mark" aria-hidden="true"></span>测试协作平台</div>
+        <nav class="workspace-nav" aria-label="工作区导航" id="workspace-nav"></nav>
+        <div class="workspace-identity" id="identity"></div>
+      </div>
+    </header>
+    <main class="admin-layout"><div class="workspace-content"><div class="issue-surface" id="view"></div></div></main>
+    <p class="prototype-announcement" id="announcement" role="status"></p>
+  </div>
+  <footer class="prototype-links" aria-label="原型评审入口">
+    <span>原型评审</span>
+    <a class="admin-button" href="#tester">测试事项</a>
+    <a class="admin-button" href="#developer?queue=inbox">开发待领取</a>
+    <a class="admin-button" href="#developer?queue=assigned">开发待办</a>
+    <a class="admin-button" href="#developer?queue=feedback">开发已反馈</a>
+  </footer>
+</body>
+</html>

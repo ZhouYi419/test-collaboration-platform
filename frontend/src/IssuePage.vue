@@ -3,20 +3,25 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import AccountWorkspace from './AccountWorkspace.vue'
 import IssueEditor from './IssueEditor.vue'
+import IssueHistory from './IssueHistory.vue'
 import IssueIcon from './IssueIcon.vue'
+import IssueListQuery from './IssueListQuery.vue'
 import IssueVerification from './IssueVerification.vue'
 import IssueVerificationResult from './IssueVerificationResult.vue'
 import IssueWorkflow from './IssueWorkflow.vue'
 import { ApiError, authApi, errorMessage, type User } from './api'
 import {
-  fieldsByType, fileSize, issueDate, issuesApi, statusLabels, typeLabels,
-  queues, type DeveloperQueue, type Attachment, type IssueDetail, type IssueSummary, type VerificationOutcome, type WorkflowAction,
+  defaultIssueFilters, fieldsByType, fileSize, issueDate, issuePageLimit, issueQueryParams, issueSearchLimit, issueSortLabels,
+  issuesApi, priorityOptions, queueStatuses, queues, statusLabels, typeLabels,
+  type Attachment, type DeveloperQueue, type IssueDetail, type IssueFilters, type IssueSort, type IssueStatus, type IssueSummary,
+  type IssueType, type VerificationOutcome, type WorkflowAction,
 } from './issuesApi'
 
 const router = useRouter()
 const route = useRoute()
 const user = ref<User | null>(null)
 const items = ref<IssueSummary[]>([])
+const hasNext = ref(false)
 const detail = ref<IssueDetail | null>(null)
 const busy = ref(true)
 const failure = ref<{ message: string; status: number }>()
@@ -36,12 +41,37 @@ const queue = computed<DeveloperQueue>(() => {
   const value = String(route.query.queue ?? 'inbox')
   return Object.hasOwn(queues, value) ? value as DeveloperQueue : 'inbox'
 })
-const listPath = computed(() => developerPage.value ? `/development?queue=${queue.value}` : '/issues')
+const statuses = computed(() => developerPage.value ? queueStatuses[queue.value] : Object.keys(statusLabels) as IssueStatus[])
+
+function selected<T extends string>(value: unknown, options: readonly T[]): T | '' {
+  return typeof value === 'string' && options.includes(value as T) ? value as T : ''
+}
+
+const filters = computed<IssueFilters>(() => ({
+  q: typeof route.query.q === 'string' ? route.query.q.trim().slice(0, issueSearchLimit) : '',
+  type: selected(route.query.type, Object.keys(typeLabels) as IssueType[]),
+  priority: selected(route.query.priority, priorityOptions),
+  status: selected(route.query.status, statuses.value),
+  sort: selected(route.query.sort, Object.keys(issueSortLabels) as IssueSort[]) || 'recent',
+}))
+const page = computed(() => {
+  const number = typeof route.query.page === 'string' ? Number(route.query.page) : 1
+  return Number.isSafeInteger(number) && number > 0 && number <= issuePageLimit ? number : 1
+})
+const isFiltered = computed(() => !!(filters.value.q || filters.value.type || filters.value.priority || filters.value.status))
+
+function listLocation(criteria: IssueFilters, number: number) {
+  const query = issueQueryParams(criteria, number)
+  if (developerPage.value) query.queue = queue.value
+  return { path: developerPage.value ? '/development' : '/issues', query }
+}
+
+const listPath = computed(() => listLocation(filters.value, page.value))
 const detailBack = computed(() => {
   if (!developerPage.value || !detail.value) return listPath.value
   const state = detail.value.status
   const destination = state === 'pending_claim' ? 'inbox' : ['pending_verify', 'closed'].includes(state) ? 'feedback' : 'assigned'
-  return `/development?queue=${destination}`
+  return destination === queue.value ? listPath.value : { path: '/development', query: { queue: destination } }
 })
 const canProcess = computed(() => developerPage.value && detail.value && (
   detail.value.status === 'pending_claim' || detail.value.assignee?.id === user.value?.id
@@ -50,9 +80,14 @@ const canVerify = computed(() => !developerPage.value && detail.value?.status ==
   && detail.value.creator.id === user.value?.id)
 const reworking = computed(() => canProcess.value && detail.value?.status === 'in_progress'
   && detail.value.latest_verification?.outcome === 'returned')
+const canReadHistory = computed(() => detail.value && detail.value.status !== 'draft'
+  && (developerPage.value ? detail.value.assignee?.id : detail.value.creator.id) === user.value?.id
+  && !!user.value)
 const editing = computed(() => !developerPage.value && (itemId.value === 'new' || detail.value?.status === 'draft'))
 const itemId = computed(() => String(route.params.issueId ?? ''))
 const listView = computed(() => !itemId.value && failure.value?.status !== 403)
+const emptyListTitle = computed(() => page.value > 1 ? '当前页没有事项' : isFiltered.value ? '没有符合条件的事项' :
+  developerPage.value ? { inbox: '暂无待领取事项', assigned: '暂无待办', feedback: '暂无已反馈事项' }[queue.value] : '暂无事项')
 const specifics = computed(() => detail.value?.type
   ? fieldsByType[detail.value.type].filter(field => detail.value?.form[field.key])
   : [])
@@ -60,12 +95,14 @@ let listPosition: { path: string; scroll: number } | undefined
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 let loadVersion = 0
 let focusQueue = false
+let focusResults = false
 
 async function load() {
   const version = ++loadVersion
   const target = itemId.value
   busy.value = true
   failure.value = undefined
+  hasNext.value = false
   detail.value = null
   feedbackReceipt.value = false
   verificationReceipt.value = ''
@@ -81,8 +118,11 @@ async function load() {
     if (profile.role !== (developerPage.value ? 'developer' : 'tester')) {
       failure.value = { message: developerPage.value ? '开发事项仅向开发人员开放。' : '我的事项仅向测试人员开放。', status: 403 }
     } else if (!target) {
-      const result = developerPage.value ? await issuesApi.development(queue.value) : await issuesApi.list()
-      if (version === loadVersion) items.value = result
+      const result = await issuesApi.list(filters.value, page.value, developerPage.value ? queue.value : undefined)
+      if (version === loadVersion) {
+        items.value = result.items
+        hasNext.value = result.has_next && page.value < issuePageLimit
+      }
     } else if (target !== 'new' || developerPage.value) {
       const result = await issuesApi.get(target)
       if (version === loadVersion) detail.value = result
@@ -100,9 +140,12 @@ async function load() {
 
   await nextTick()
   if (version !== loadVersion) return
+  const nextFocus = focusQueue ? '.queue-tab[aria-current="page"]' : focusResults ? '.issue-list-results [tabindex="-1"]' : 'h1'
+  focusQueue = false
+  focusResults = false
   const previous = listPosition
-  if (!target) listPosition = undefined
   if (!target) {
+    if (!failure.value) listPosition = undefined
     const origin = changedId.value
       ? view.value?.querySelector<HTMLElement>('.recently-changed .issue-title')
       : previous && view.value?.querySelector<HTMLElement>(`a[href=${CSS.escape(previous.path)}]`)
@@ -114,10 +157,31 @@ async function load() {
       origin.focus({ preventScroll: true })
       return
     }
+    const retry = view.value?.querySelector<HTMLElement>('.issue-list-retry')
+    if (retry) {
+      retry.focus()
+      return
+    }
   }
   window.scrollTo(0, 0)
-  view.value?.querySelector<HTMLElement>(focusQueue ? '.queue-tab[aria-current="page"]' : 'h1')?.focus({ preventScroll: true })
-  focusQueue = false
+  const next = view.value?.querySelector<HTMLElement>(nextFocus) ?? view.value?.querySelector<HTMLElement>('h1')
+  next?.focus({ preventScroll: true })
+  if (next && next.getBoundingClientRect().top > innerHeight - 90) next.scrollIntoView({ block: 'start' })
+}
+
+function retryRead() {
+  focusResults = listView.value
+  return load()
+}
+
+function applyFilters(criteria: IssueFilters) {
+  const target = listLocation(criteria, 1)
+  if (router.resolve(target).fullPath === route.fullPath) {
+    focusResults = true
+    void load()
+  } else {
+    void router.push(target)
+  }
 }
 
 function login() {
@@ -134,7 +198,7 @@ function showSaved(id: string, message: string) {
 }
 
 function itemPath(id: string) {
-  return developerPage.value ? `/development/${id}?queue=${queue.value}` : `/issues/${id}`
+  return { path: `${listPath.value.path}/${id}`, query: listPath.value.query }
 }
 
 async function updated(issue: IssueDetail, action: WorkflowAction) {
@@ -202,9 +266,13 @@ onBeforeRouteUpdate(async (to, from) => {
   if (workflow.value && !await workflow.value.confirmLeave()) return false
   if (verification.value && !await verification.value.confirmLeave()) return false
   if (!from.params.issueId && to.params.issueId) listPosition = { path: to.fullPath, scroll: window.scrollY }
-  focusQueue = developerPage.value && !from.params.issueId && !to.params.issueId && to.query.queue !== from.query.queue
-  if (!from.params.issueId && !to.params.issueId && to.query.queue !== from.query.queue) listPosition = undefined
-  if (!from.params.issueId && !to.params.issueId) changedId.value = ''
+  const changingList = !from.params.issueId && !to.params.issueId
+  focusQueue = developerPage.value && changingList && to.query.queue !== from.query.queue
+  focusResults = changingList && !focusQueue
+  if (changingList) {
+    listPosition = undefined
+    changedId.value = ''
+  }
   if (to.params.issueId) workflowNotice.value = ''
   return true
 })
@@ -234,28 +302,31 @@ watch(() => route.fullPath, load, { immediate: true })
           <RouterLink v-for="(label, key) in queues" :key="key" class="queue-tab" :to="`/development?queue=${key}`"
             :aria-current="queue === key ? 'page' : undefined"><IssueIcon :name="key" />{{ label }}</RouterLink>
         </nav>
+        <IssueListQuery v-if="user?.role === (developerPage ? 'developer' : 'tester')" :key="queue"
+          :filters="filters" :statuses="statuses" @apply="applyFilters" />
       </template>
 
       <template v-if="failure">
         <div v-if="!listView" class="issue-head">
           <h1 tabindex="-1">{{ failure.status === 403 ? '无权访问' : failure.status === 404 ? '事项不可用' : pageTitle }}</h1>
         </div>
-        <div class="issue-empty">
+        <div class="issue-empty" :class="{ 'query-placeholder': listView }">
           <p role="alert">{{ failure.message }}</p>
           <RouterLink v-if="failure.status === 403" class="admin-button create-button" to="/account">返回我的账号</RouterLink>
           <RouterLink v-else-if="failure.status === 404" class="admin-button create-button" :to="listPath">返回列表</RouterLink>
-          <button v-else type="button" class="admin-button" @click="load">重新加载</button>
+          <button v-else type="button" class="admin-button" :class="{ 'issue-list-retry': listView }"
+            @click="retryRead">重新加载</button>
         </div>
       </template>
 
       <template v-else-if="busy">
         <div v-if="!listView" class="issue-head"><h1 tabindex="-1">{{ pageTitle }}</h1></div>
-        <p class="issue-empty" role="status">正在加载事项…</p>
+        <p class="issue-empty" :class="{ 'query-placeholder': listView }" role="status">正在加载事项…</p>
       </template>
 
-      <template v-else-if="!itemId">
+      <div v-else-if="!itemId" class="issue-list-results">
         <p v-if="workflowNotice" class="action-error workflow-notice" role="alert">{{ workflowNotice }}</p>
-        <div v-if="items.length" class="issue-list-panel">
+        <div v-if="items.length" class="issue-list-panel" tabindex="-1">
           <table class="issue-table" :class="{ 'uniform-queue': developerPage && queue === 'inbox' }"
             :aria-label="developerPage ? queues[queue] : pageTitle">
             <colgroup><col><col><col><col><col></colgroup>
@@ -282,8 +353,20 @@ watch(() => route.fullPath, load, { immediate: true })
             </tbody>
           </table>
         </div>
-        <div v-else class="issue-empty"><h2>{{ developerPage ? { inbox: '暂无待领取事项', assigned: '暂无待办', feedback: '暂无已反馈事项' }[queue] : '暂无事项' }}</h2></div>
-      </template>
+        <div v-else class="issue-empty query-placeholder" tabindex="-1">
+          <h2>{{ emptyListTitle }}</h2>
+          <button v-if="isFiltered" type="button" class="admin-button" @click="applyFilters(defaultIssueFilters)">清空条件</button>
+        </div>
+        <nav v-if="page > 1 || hasNext" class="issue-pagination" aria-label="事项分页">
+          <span>第 {{ page }} 页</span>
+          <div class="page-actions">
+            <RouterLink v-if="page > 1" class="admin-button" :to="listLocation(filters, page - 1)">上一页</RouterLink>
+            <button v-else type="button" class="admin-button" disabled>上一页</button>
+            <RouterLink v-if="hasNext" class="admin-button" :to="listLocation(filters, page + 1)">下一页</RouterLink>
+            <button v-else type="button" class="admin-button" disabled>下一页</button>
+          </div>
+        </nav>
+      </div>
 
       <template v-else>
         <RouterLink class="back-link" :to="detailBack"><span aria-hidden="true">←</span> {{ developerPage ? '开发事项' : '我的事项' }}</RouterLink>
@@ -371,8 +454,12 @@ watch(() => route.fullPath, load, { immediate: true })
                 @unavailable="unavailable" @expired="login" />
             </div>
           </div>
+          <IssueHistory v-if="canReadHistory" :key="detail.id" :issue-id="detail.id" :version="detail.version" @expired="login" />
         </template>
       </template>
+      <p v-if="listView" class="verification-announcement" role="status">
+        {{ !busy && !failure ? (items.length ? `第 ${page} 页，${items.length} 条事项` : emptyListTitle) : '' }}
+      </p>
     </div>
     <div class="issue-notice" role="status">{{ notice }}</div>
   </AccountWorkspace>
@@ -381,3 +468,4 @@ watch(() => route.fullPath, load, { immediate: true })
 <style src="./issues.css"></style>
 <style src="./issue-review.css"></style>
 <style src="./issue-editor.css"></style>
+<style src="./issue-search.css"></style>

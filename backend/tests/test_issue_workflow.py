@@ -54,9 +54,9 @@ async def test_developer_flow_and_read_permissions(app, client, assigned):
         assert (await client.get(attachment_path, headers=account)).status_code == 404
         assert (await act(client, account, issue, "start")).status_code in {403, 404}
     assert (await act(client, developer, issue, "finish", feedback="skip")).status_code == 409
-    assert [item["id"] for item in (await client.get("/api/issues/development?queue=assigned", headers=developer)).json()] == [issue["id"]]
-    assert (await client.get("/api/issues/development", headers=developer)).json() == []
-    assert (await client.get("/api/issues/development?queue=assigned", headers=outsider)).json() == []
+    assert [item["id"] for item in (await client.get("/api/issues/development?queue=assigned", headers=developer)).json()["items"]] == [issue["id"]]
+    assert (await client.get("/api/issues/development", headers=developer)).json()["items"] == []
+    assert (await client.get("/api/issues/development?queue=assigned", headers=outsider)).json()["items"] == []
     started = await act(client, developer, issue, "start")
     assert started.status_code == 200, started.text
     assert (await act(client, developer, issue, "start")).status_code == 409
@@ -76,8 +76,8 @@ async def test_developer_flow_and_read_permissions(app, client, assigned):
     assert (await act(client, developer, issue, "finish", write_id=mutation, feedback="已修复，等待复测。")).json() == result
     assert (await client.get(path, headers=owner)).json() == result
     assert (await client.get(attachment_path, headers=developer)).status_code == 200
-    assert (await client.get("/api/issues/development?queue=assigned", headers=developer)).json() == []
-    assert (await client.get("/api/issues/development?queue=feedback", headers=developer)).json()[0]["id"] == issue["id"]
+    assert (await client.get("/api/issues/development?queue=assigned", headers=developer)).json()["items"] == []
+    assert (await client.get("/api/issues/development?queue=feedback", headers=developer)).json()["items"][0]["id"] == issue["id"]
 
 
 async def test_assignment_revalidation_and_role_changes(app, client):
@@ -135,7 +135,7 @@ async def test_simultaneous_claims_have_single_owner_and_private_result(app, cli
     assert set(rejected) == {"detail"}
     assert rejected["detail"]["code"] == "claim_unavailable"
     assert (await client.get(path, headers=developers[1-winner])).status_code == 404
-    assert (await client.get("/api/issues/development", headers=developers[1-winner])).json() == []
+    assert (await client.get("/api/issues/development", headers=developers[1-winner])).json()["items"] == []
 
 
 async def test_concurrent_replays_apply_each_action_once(app, client):

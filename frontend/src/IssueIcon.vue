@@ -8,6 +8,7 @@ const paths = {
   draft: 'M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6m-6 4h6',
   plus: 'M12 5v14M5 12h14',
   arrow: 'm9 6 6 6-6 6',
+  chevron: 'm6 9 6 6 6-6',
   down: 'M12 4v13m-5-5 5 5 5-5 M5 20h14',
   check: 'm5 12 4 4 10-10',
   jump: 'M12 5v14m-5-5 5 5 5-5',

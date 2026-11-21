@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
@@ -11,11 +11,15 @@ from . import issue_service
 from .auth import get_current_user
 from .database import Database
 from .errors import api_error
-from .issue_schemas import IssueAction, IssueDetail, IssuePerson, IssueSummary, VerifyIssue
+from .issue_schemas import (
+    DevelopmentQuery, IssueAction, IssueDetail, IssueListQuery, IssuePage, IssuePerson, IssueRound,
+    IssueSummary, VerifyIssue,
+)
 from .issue_uploads import Submission, parse_submission
 from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, User, UserRole
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
+page_size = 20
 
 
 def require_tester(user: Annotated[User, Depends(get_current_user)]) -> User:
@@ -65,9 +69,34 @@ def list_developers(db: Database, _: Tester):
     ).all()
 
 
-@router.get("/development", response_model=list[IssueSummary])
+def query_issues(db: Database, scope: ColumnElement[bool], filters: IssueListQuery) -> IssuePage:
+    statement = select(Issue).options(load_only(
+        Issue.id, Issue.type, Issue.title, Issue.priority, Issue.status, Issue.updated_at,
+    )).where(scope)
+    if filters.q:
+        # 将输入中的百分号和下划线当作普通字符搜索。
+        statement = statement.where(or_(
+            Issue.title.icontains(filters.q, autoescape=True),
+            Issue.description.icontains(filters.q, autoescape=True),
+        ))
+    for field in (Issue.type, Issue.priority, Issue.status):
+        value = getattr(filters, field.key)
+        if value is not None:
+            statement = statement.where(field == value)
+    order = Issue.updated_at.asc() if filters.sort == "oldest" else Issue.updated_at.desc()
+    if filters.sort == "priority":
+        statement = statement.order_by(Issue.priority.asc().nulls_last())
+    page = db.scalars(statement.order_by(order, Issue.id)
+                      .offset((filters.page - 1) * page_size).limit(page_size + 1)).all()
+    return IssuePage(
+        items=[IssueSummary.model_validate(item) for item in page[:page_size]],
+        has_next=len(page) > page_size,
+    )
+
+
+@router.get("/development", response_model=IssuePage)
 def developer_issues(
-    db: Database, user: Developer, queue: Literal["inbox", "assigned", "feedback"] = "inbox",
+    db: Database, user: Developer, filters: Annotated[DevelopmentQuery, Query()],
 ):
     conditions = {
         "inbox": Issue.status == IssueStatus.PENDING_CLAIM,
@@ -78,21 +107,12 @@ def developer_issues(
             IssueStatus.PENDING_VERIFY, IssueStatus.CLOSED,
         ])),
     }
-    return db.scalars(
-        select(Issue).options(load_only(
-            Issue.id, Issue.type, Issue.title, Issue.priority, Issue.status, Issue.updated_at,
-        )).where(conditions[queue]).order_by(Issue.updated_at.desc(), Issue.id)
-    ).all()
+    return query_issues(db, conditions[filters.queue], filters)
 
 
-@router.get("", response_model=list[IssueSummary])
-def list_issues(db: Database, user: Tester):
-    return db.scalars(
-        select(Issue)
-        .options(load_only(Issue.id, Issue.type, Issue.title, Issue.priority, Issue.status, Issue.updated_at))
-        .where(Issue.creator_id == user.id)
-        .order_by(Issue.updated_at.desc(), Issue.id)
-    ).all()
+@router.get("", response_model=IssuePage)
+def list_issues(db: Database, user: Tester, filters: Annotated[IssueListQuery, Query()]):
+    return query_issues(db, Issue.creator_id == user.id, filters)
 
 
 @router.get("/{issue_id}", response_model=IssueDetail)
@@ -103,6 +123,17 @@ def get_issue(issue_id: UUID, db: Database, user: IssueUser) -> IssueDetail:
     if issue is None:
         raise issue_service.not_found()
     return issue_service.issue_detail(db, issue)
+
+
+@router.get("/{issue_id}/history", response_model=list[IssueRound])
+def issue_history(issue_id: UUID, db: Database, user: IssueUser) -> list[IssueRound]:
+    owner = Issue.creator_id if user.role == UserRole.TESTER else Issue.assignee_id
+    issue = db.scalar(select(Issue).where(
+        Issue.id == issue_id, owner == user.id, Issue.status != IssueStatus.DRAFT,
+    ).with_for_update(read=True))
+    if issue is None:
+        raise issue_service.not_found()
+    return issue_service.issue_history(db, issue)
 
 
 @router.put("/{issue_id}", response_model=IssueDetail)

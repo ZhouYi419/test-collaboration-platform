@@ -10,7 +10,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from .errors import api_error, validation_error
 from .issue_schemas import (
     COMMON_FIELDS, AttachmentInfo, IssueAction, IssueDetail, IssueForm, IssuePerson,
-    IssueSummary, IssueWrite, VerificationResult, VerifyIssue,
+    IssueRound, IssueSummary, IssueWrite, VerificationResult, VerifyIssue,
 )
 from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, IssueVerification, User, UserRole
 
@@ -21,6 +21,13 @@ def not_found() -> HTTPException:
 
 def conflict() -> HTTPException:
     return api_error(409, "issue_conflict", "事项已更新，请重新打开后再操作")
+
+
+def verification_result(db: Session, record: IssueVerification) -> VerificationResult:
+    return VerificationResult(
+        outcome=record.outcome, reason=record.reason, verified_at=record.verified_at,
+        tester=IssuePerson.model_validate(db.get(User, record.tester_id)),
+    )
 
 
 def issue_detail(db: Session, issue: Issue) -> IssueDetail:
@@ -36,11 +43,27 @@ def issue_detail(db: Session, issue: Issue) -> IssueDetail:
         creator=IssuePerson.model_validate(db.get(User, issue.creator_id)),
         assignee=IssuePerson.model_validate(db.get(User, issue.assignee_id)) if issue.assignee_id else None,
         feedback=issue.feedback, feedback_at=issue.feedback_at,
-        latest_verification=VerificationResult(
-            outcome=latest.outcome, reason=latest.reason, verified_at=latest.verified_at,
-            tester=IssuePerson.model_validate(db.get(User, latest.tester_id)),
-        ) if latest is not None else None,
+        latest_verification=verification_result(db, latest) if latest is not None else None,
     )
+
+
+def issue_history(db: Session, issue: Issue) -> list[IssueRound]:
+    if issue.assignee_id is None:
+        return []
+    developer = IssuePerson.model_validate(db.get(User, issue.assignee_id))
+    # 以被验证的版本排列各轮，即使两次操作的时间戳相同也能确定顺序。
+    records = db.scalars(select(IssueVerification).where(
+        IssueVerification.issue_id == issue.id, IssueVerification.issue_version < issue.version,
+    ).order_by(IssueVerification.issue_version))
+    rounds = [
+        IssueRound(number=number, developer=developer, feedback=record.feedback, feedback_at=record.feedback_at,
+                   verification=verification_result(db, record))
+        for number, record in enumerate(records, start=1)
+    ]
+    if issue.status == IssueStatus.PENDING_VERIFY and issue.feedback is not None and issue.feedback_at is not None:
+        rounds.append(IssueRound(number=len(rounds) + 1, developer=developer, feedback=issue.feedback,
+                                 feedback_at=issue.feedback_at, verification=None))
+    return list(reversed(rounds))
 
 
 def save_issue(

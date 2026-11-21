@@ -14,6 +14,7 @@ FIELD_NAMES = {
     "role": "角色",
     "status": "账号状态",
 }
+QUERY_FIELD_NAMES = {"q": "关键词", "status": "事项状态", "sort": "排序方式", "page": "页码", "queue": "开发队列"}
 
 
 def validation_message(error: ErrorDetails, field: str) -> str:
@@ -26,7 +27,8 @@ def validation_message(error: ErrorDetails, field: str) -> str:
             return "请输入密码"
         if error["type"] == "string_too_long":
             return "密码最多 128 位"
-    return f"请填写有效的{FIELD_NAMES[field]}"
+    label = QUERY_FIELD_NAMES.get(field) if error["loc"][0] == "query" else None
+    return f"请填写有效的{label or FIELD_NAMES[field]}"
 
 
 def validation_fields(errors: Iterable[ErrorDetails]) -> dict[str, str]:
@@ -35,7 +37,9 @@ def validation_fields(errors: Iterable[ErrorDetails]) -> dict[str, str]:
         if not error["loc"]:
             continue
         field = error["loc"][-1]
-        if isinstance(field, str) and field in FIELD_NAMES:
+        if isinstance(field, str) and (field in FIELD_NAMES or (
+            error["loc"][0] == "query" and field in QUERY_FIELD_NAMES
+        )):
             # 仅返回已知字段的提示，避免把原始输入或内部校验上下文发给浏览器。
             fields[field] = validation_message(error, field)
     return fields
