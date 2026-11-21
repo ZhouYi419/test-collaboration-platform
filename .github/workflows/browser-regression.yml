@@ -1,0 +1,54 @@
+name: 三浏览器回归
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browsers:
+    name: Chrome、Edge 与 Firefox
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pytest_cache/playwright-browsers
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 安装页面依赖
+        working-directory: frontend
+        run: npm ci
+      - name: 安装浏览器测试依赖
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./.venv/Scripts/python.exe -m pip install -r backend/requirements-e2e.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./.venv/Scripts/python.exe -m playwright install firefox
+      - name: 运行三个浏览器的回归用例
+        run: ./e2e/run.ps1
+      - name: 归档报告和失败证据
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-regression
+          include-hidden-files: true
+          path: |
+            .pytest_cache/browser-*/*/results.xml
+            .pytest_cache/browser-*/*/evidence/**/*.png
+            .pytest_cache/browser-*/*/evidence/**/*.zip
+            .pytest_cache/browser-*/*/tmp/**/api.log
+            .pytest_cache/browser-*/*/tmp/**/web.log
