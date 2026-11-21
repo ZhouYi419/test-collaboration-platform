@@ -2,18 +2,23 @@
 import { nextTick, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { transitionAuth } from './auth-motion'
+import { provideNotificationSession } from './notificationSession'
 
 const { currentRoute } = useRouter()
 const displayedRoute = shallowRef(currentRoute.value)
+const notifications = provideNotificationSession()
 
 watch(currentRoute, (to) => {
   const from = displayedRoute.value
+  if (!to.meta.workspace) notifications.select(null)
   const render = async () => {
     if (currentRoute.value !== to) return
     displayedRoute.value = to
     await nextTick()
     if (!from.name || currentRoute.value !== to) return
-    window.scrollTo(0, 0)
+    const origin = notifications.origin.value
+    const restored = origin?.destination === from.fullPath && origin.from === to.fullPath
+    window.scrollTo(0, restored ? origin.scroll : 0)
     document.querySelector<HTMLElement>('main h1[tabindex="-1"]')?.focus({ preventScroll: true })
   }
 

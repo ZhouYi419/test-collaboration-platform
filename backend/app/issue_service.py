@@ -12,7 +12,9 @@ from .issue_schemas import (
     COMMON_FIELDS, AttachmentInfo, IssueAction, IssueDetail, IssueForm, IssuePerson,
     IssueRound, IssueSummary, IssueWrite, VerificationResult, VerifyIssue,
 )
-from .models import AccountStatus, Issue, IssueAttachment, IssueStatus, IssueVerification, User, UserRole
+from .models import (
+    AccountStatus, Issue, IssueAttachment, IssueStatus, IssueVerification, Notification, NotificationEvent, User, UserRole,
+)
 
 
 def not_found() -> HTTPException:
@@ -21,6 +23,14 @@ def not_found() -> HTTPException:
 
 def conflict() -> HTTPException:
     return api_error(409, "issue_conflict", "事项已更新，请重新打开后再操作")
+
+
+def notify(db: Session, issue: Issue, recipient_id: int, event: NotificationEvent) -> None:
+    # 调用方先刷新事项版本，只有成功推进状态的写入会生成消息。
+    db.add(Notification(
+        issue_id=issue.id, issue_version=issue.version, recipient_id=recipient_id,
+        event=event, created_at=issue.updated_at,
+    ))
 
 
 def verification_result(db: Session, record: IssueVerification) -> VerificationResult:
@@ -110,6 +120,8 @@ def save_issue(
     try:
         db.add(issue)
         db.flush()
+        if data.submit and issue.assignee_id is not None:
+            notify(db, issue, issue.assignee_id, NotificationEvent.ASSIGNED)
         db.add_all(IssueAttachment(issue_id=issue_id, name=name, size=len(content), content=content)
                    for name, content in attachments)
         db.flush()
@@ -117,6 +129,9 @@ def save_issue(
         db.commit()
     except StaleDataError:
         db.rollback()
+        current = db.get(Issue, issue_id, with_for_update={"read": True})
+        if current and current.creator_id == user.id and current.last_write_id == data.write_id:
+            return issue_detail(db, current)
         raise conflict() from None
     except IntegrityError:
         # 并发创建时，已提交的相同请求可安全重放。
@@ -141,11 +156,11 @@ def act_on_issue(issue_id: UUID, data: IssueAction, db: Session, user: User) -> 
     if issue.status != IssueStatus.PENDING_CLAIM and issue.assignee_id != user.id:
         raise not_found()
     transitions = {
-        "claim": (IssueStatus.PENDING_CLAIM, IssueStatus.PENDING_WORK),
-        "start": (IssueStatus.PENDING_WORK, IssueStatus.IN_PROGRESS),
-        "finish": (IssueStatus.IN_PROGRESS, IssueStatus.PENDING_VERIFY),
+        "claim": (IssueStatus.PENDING_CLAIM, IssueStatus.PENDING_WORK, NotificationEvent.CLAIMED),
+        "start": (IssueStatus.PENDING_WORK, IssueStatus.IN_PROGRESS, NotificationEvent.STARTED),
+        "finish": (IssueStatus.IN_PROGRESS, IssueStatus.PENDING_VERIFY, NotificationEvent.FEEDBACK),
     }
-    expected, destination = transitions[data.action]
+    expected, destination, event = transitions[data.action]
     if issue.last_write_id == data.write_id and issue.version == data.version + 1 and issue.status == destination:
         return issue_detail(db, issue)
     if issue.version != data.version or issue.status != expected:
@@ -166,6 +181,7 @@ def act_on_issue(issue_id: UUID, data: IssueAction, db: Session, user: User) -> 
     issue.last_write_id = data.write_id
     try:
         db.flush()
+        notify(db, issue, issue.creator_id, event)
         result = issue_detail(db, issue)
         db.commit()
     except StaleDataError:
@@ -202,7 +218,7 @@ def verify_issue(issue_id: UUID, data: VerifyIssue, db: Session, user: User) -> 
         db.refresh(issue, with_for_update={"read": True})
         return issue_detail(db, issue)
     if (issue.version != data.version or issue.status != IssueStatus.PENDING_VERIFY
-            or not issue.feedback or issue.feedback_at is None):
+            or not issue.feedback or issue.feedback_at is None or issue.assignee_id is None):
         raise conflict()
     if data.outcome == "returned" and not data.reason:
         raise validation_error({"reason": "请填写退回原因"})
@@ -221,6 +237,8 @@ def verify_issue(issue_id: UUID, data: VerifyIssue, db: Session, user: User) -> 
         # 先确认版本竞争已胜出，再写入本轮验证记录。两次写入在同一事务提交。
         db.flush()
         db.add(record)
+        notify(db, issue, issue.assignee_id,
+               NotificationEvent.PASSED if data.outcome == "passed" else NotificationEvent.RETURNED)
         db.flush()
         result = issue_detail(db, issue)
         db.commit()

@@ -109,6 +109,35 @@ class IssueVerification(Base):
     write_id: Mapped[UUID] = mapped_column(Uuid)
 
 
+class NotificationEvent(StrEnum):
+    ASSIGNED = "assigned"
+    CLAIMED = "claimed"
+    STARTED = "started"
+    FEEDBACK = "feedback"
+    PASSED = "passed"
+    RETURNED = "returned"
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        CheckConstraint(
+            "event IN ('assigned', 'claimed', 'started', 'feedback', 'passed', 'returned')",
+            name="ck_notifications_event",
+        ),
+        UniqueConstraint("issue_id", "issue_version", "recipient_id", name="uq_notifications_issue_version_recipient"),
+        Index("ix_notifications_recipient_created", "recipient_id", "created_at", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issue_id: Mapped[UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"))
+    issue_version: Mapped[int]
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    event: Mapped[str] = mapped_column(String(8))
+    created_at: Mapped[int] = mapped_column(BigInteger)
+    read_at: Mapped[int | None] = mapped_column(BigInteger)
+
+
 class IssueAttachment(Base):
     __tablename__ = "issue_attachments"
     __table_args__ = {"sqlite_autoincrement": True}

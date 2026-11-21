@@ -11,6 +11,7 @@ from .auth import router as auth_router
 from .config import Settings
 from .errors import validation_error
 from .issues import router as issues_router
+from .notifications import router as notifications_router
 from .validation import validation_fields
 
 
@@ -37,12 +38,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(issues_router)
+    app.include_router(notifications_router)
 
     @app.middleware("http")
     async def protect_private_requests(request: Request, call_next):
         if not (
-            request.url.path == "/api/issues"
-            or request.url.path.startswith(("/api/auth/", "/api/admin/", "/api/issues/"))
+            request.url.path in {"/api/issues", "/api/notifications"}
+            or request.url.path.startswith(("/api/auth/", "/api/admin/", "/api/issues/", "/api/notifications/"))
         ):
             return await call_next(request)
         if (

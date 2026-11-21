@@ -13,6 +13,11 @@ const paths = {
   check: 'm5 12 4 4 10-10',
   jump: 'M12 5v14m-5-5 5 5 5-5',
   return: 'm8 7-4 4 4 4m-4-4h11a4 4 0 0 1 0 8h-3',
+  bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
+  close: 'm6 6 12 12M18 6 6 18',
+  started: 'm9 6 10 6-10 6z',
+  claimed: 'M17 20H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6m2 8 3 3 5-5M8 10h3m-3 4h2M14 4h4a2 2 0 0 1 2 2v3',
+  passed: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM8 12l3 3 5-6',
 }
 defineProps<{ name: keyof typeof paths }>()
 </script>

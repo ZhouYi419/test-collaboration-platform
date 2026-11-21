@@ -85,9 +85,26 @@ def upgrade() -> None:
         sqlite_autoincrement=True,
     )
     op.create_index("ix_issue_attachments_issue_id", "issue_attachments", ["issue_id"])
+    op.create_table(
+        "notifications",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("issue_id", sa.Uuid(), sa.ForeignKey("issues.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("issue_version", sa.Integer(), nullable=False),
+        sa.Column("recipient_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("event", sa.String(8), nullable=False),
+        sa.Column("created_at", sa.BigInteger(), nullable=False),
+        sa.Column("read_at", sa.BigInteger(), nullable=True),
+        sa.CheckConstraint(
+            "event IN ('assigned', 'claimed', 'started', 'feedback', 'passed', 'returned')",
+            name="ck_notifications_event",
+        ),
+        sa.UniqueConstraint("issue_id", "issue_version", "recipient_id", name="uq_notifications_issue_version_recipient"),
+    )
+    op.create_index("ix_notifications_recipient_created", "notifications", ["recipient_id", "created_at", "id"])
 
 
 def downgrade() -> None:
+    op.drop_table("notifications")
     op.drop_table("issue_attachments")
     op.drop_table("issue_verifications")
     op.drop_table("issues")

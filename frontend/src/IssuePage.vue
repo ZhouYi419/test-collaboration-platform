@@ -10,6 +10,8 @@ import IssueVerification from './IssueVerification.vue'
 import IssueVerificationResult from './IssueVerificationResult.vue'
 import IssueWorkflow from './IssueWorkflow.vue'
 import { ApiError, authApi, errorMessage, type User } from './api'
+import { useNotificationSession } from './notificationSession'
+import { notificationsApi } from './notificationsApi'
 import {
   defaultIssueFilters, fieldsByType, fileSize, issueDate, issuePageLimit, issueQueryParams, issueSearchLimit, issueSortLabels,
   issuesApi, priorityOptions, queueStatuses, queues, statusLabels, typeLabels,
@@ -19,6 +21,7 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+const notifications = useNotificationSession()
 const user = ref<User | null>(null)
 const items = ref<IssueSummary[]>([])
 const hasNext = ref(false)
@@ -26,6 +29,8 @@ const detail = ref<IssueDetail | null>(null)
 const busy = ref(true)
 const failure = ref<{ message: string; status: number }>()
 const downloadError = ref('')
+const notificationReadError = ref(false)
+const notificationReading = ref(false)
 const editor = ref<InstanceType<typeof IssueEditor>>()
 const workflow = ref<InstanceType<typeof IssueWorkflow>>()
 const verification = ref<InstanceType<typeof IssueVerification>>()
@@ -67,7 +72,14 @@ function listLocation(criteria: IssueFilters, number: number) {
 }
 
 const listPath = computed(() => listLocation(filters.value, page.value))
+const notificationId = computed(() => {
+  const id = typeof route.query.notification === 'string' ? Number(route.query.notification) : 0
+  return Number.isInteger(id) && id > 0 && id <= 2_147_483_647 ? id : undefined
+})
+const notificationFrom = computed(() => notifications.origin.value?.destination === route.fullPath
+  ? notifications.origin.value.from : undefined)
 const detailBack = computed(() => {
+  if (notificationFrom.value) return notificationFrom.value
   if (!developerPage.value || !detail.value) return listPath.value
   const state = detail.value.status
   const destination = state === 'pending_claim' ? 'inbox' : ['pending_verify', 'closed'].includes(state) ? 'feedback' : 'assigned'
@@ -96,10 +108,13 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined
 let loadVersion = 0
 let focusQueue = false
 let focusResults = false
+let returnScroll: number | undefined
 
 async function load() {
   const version = ++loadVersion
   const target = itemId.value
+  const restoreScroll = returnScroll
+  returnScroll = undefined
   busy.value = true
   failure.value = undefined
   hasNext.value = false
@@ -107,6 +122,8 @@ async function load() {
   feedbackReceipt.value = false
   verificationReceipt.value = ''
   downloadError.value = ''
+  notificationReadError.value = false
+  notificationReading.value = false
   if (target) {
     notice.value = ''
     changedId.value = ''
@@ -125,7 +142,10 @@ async function load() {
       }
     } else if (target !== 'new' || developerPage.value) {
       const result = await issuesApi.get(target)
-      if (version === loadVersion) detail.value = result
+      if (version === loadVersion) {
+        detail.value = result
+        void markNotificationRead()
+      }
     }
   } catch (error) {
     if (version !== loadVersion) return
@@ -144,6 +164,12 @@ async function load() {
   focusQueue = false
   focusResults = false
   const previous = listPosition
+  if (restoreScroll !== undefined && !failure.value) {
+    listPosition = undefined
+    window.scrollTo(0, restoreScroll)
+    view.value?.querySelector<HTMLElement>('h1')?.focus({ preventScroll: true })
+    return
+  }
   if (!target) {
     if (!failure.value) listPosition = undefined
     const origin = changedId.value
@@ -167,6 +193,23 @@ async function load() {
   const next = view.value?.querySelector<HTMLElement>(nextFocus) ?? view.value?.querySelector<HTMLElement>('h1')
   next?.focus({ preventScroll: true })
   if (next && next.getBoundingClientRect().top > innerHeight - 90) next.scrollIntoView({ block: 'start' })
+}
+
+async function markNotificationRead() {
+  const id = notificationId.value
+  const issue = detail.value
+  if (!id || !issue || notificationReading.value) return
+  const version = loadVersion
+  notificationReading.value = true
+  try {
+    await notificationsApi.markRead(id, issue.id)
+    notifications.read(id)
+    if (version === loadVersion) notificationReadError.value = false
+  } catch {
+    if (version === loadVersion) notificationReadError.value = true
+  } finally {
+    if (version === loadVersion) notificationReading.value = false
+  }
 }
 
 function retryRead() {
@@ -265,6 +308,8 @@ onBeforeRouteUpdate(async (to, from) => {
   if (editor.value && !await editor.value.confirmLeave()) return false
   if (workflow.value && !await workflow.value.confirmLeave()) return false
   if (verification.value && !await verification.value.confirmLeave()) return false
+  const origin = notifications.origin.value
+  returnScroll = origin?.destination === from.fullPath && origin.from === to.fullPath ? origin.scroll : undefined
   if (!from.params.issueId && to.params.issueId) listPosition = { path: to.fullPath, scroll: window.scrollY }
   const changingList = !from.params.issueId && !to.params.issueId
   focusQueue = developerPage.value && changingList && to.query.queue !== from.query.queue
@@ -313,7 +358,9 @@ watch(() => route.fullPath, load, { immediate: true })
         <div class="issue-empty" :class="{ 'query-placeholder': listView }">
           <p role="alert">{{ failure.message }}</p>
           <RouterLink v-if="failure.status === 403" class="admin-button create-button" to="/account">返回我的账号</RouterLink>
-          <RouterLink v-else-if="failure.status === 404" class="admin-button create-button" :to="listPath">返回列表</RouterLink>
+          <RouterLink v-else-if="failure.status === 404" class="admin-button create-button" :to="notificationFrom ?? listPath">
+            {{ notificationFrom ? '返回原页面' : '返回列表' }}
+          </RouterLink>
           <button v-else type="button" class="admin-button" :class="{ 'issue-list-retry': listView }"
             @click="retryRead">重新加载</button>
         </div>
@@ -369,7 +416,9 @@ watch(() => route.fullPath, load, { immediate: true })
       </div>
 
       <template v-else>
-        <RouterLink class="back-link" :to="detailBack"><span aria-hidden="true">←</span> {{ developerPage ? '开发事项' : '我的事项' }}</RouterLink>
+        <RouterLink class="back-link" :to="detailBack"><span aria-hidden="true">←</span>
+          {{ notificationFrom ? '返回原页面' : developerPage ? '开发事项' : '我的事项' }}
+        </RouterLink>
         <template v-if="editing">
           <div class="issue-head form-head">
             <h1 tabindex="-1">{{ detail ? '编辑草稿' : '新建事项' }}</h1>
@@ -390,6 +439,12 @@ watch(() => route.fullPath, load, { immediate: true })
               <button v-else-if="canProcess && detail.status === 'in_progress'" type="button" class="admin-button feedback-jump"
                 @click="workflow?.focusInput()">处理反馈<IssueIcon name="down" /></button>
             </div>
+          </div>
+          <div v-if="notificationReadError" class="action-error" role="alert">
+            消息仍为未读。
+            <button class="admin-button" type="button" :disabled="notificationReading" @click="markNotificationRead">
+              {{ notificationReading ? '正在标记…' : '重试标为已读' }}
+            </button>
           </div>
           <div class="detail-layout">
             <section class="detail-section detail-properties" aria-labelledby="property-heading">

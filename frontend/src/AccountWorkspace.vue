@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { roleLabels, type User } from './api'
+import NotificationInbox from './NotificationInbox.vue'
+import { useNotificationSession } from './notificationSession'
 
-defineProps<{ user: User | null }>()
+const props = defineProps<{ user: User | null }>()
 const route = useRoute()
+const notifications = useNotificationSession()
+const noticeHost = ref<HTMLElement>()
+watch(() => props.user, user => { if (user) notifications.select(user) }, { immediate: true })
 </script>
 
 <template>
@@ -35,6 +41,8 @@ const route = useRoute()
           </RouterLink>
         </nav>
         <div v-if="user" class="workspace-identity">
+          <NotificationInbox v-if="user.role === 'tester' || user.role === 'developer'"
+            :key="user.id + ':' + user.role" :role="user.role" :notice-host="noticeHost" />
           <span class="avatar" aria-hidden="true">{{ [...user.username][0] }}</span>
           <div>
             <p class="identity-name">{{ user.username }}</p>
@@ -43,6 +51,7 @@ const route = useRoute()
         </div>
       </div>
     </header>
+    <div ref="noticeHost"></div>
     <main class="admin-layout">
       <div class="workspace-content"><slot /></div>
     </main>
